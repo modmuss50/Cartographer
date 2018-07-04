@@ -34,8 +34,9 @@ public class Generate {
 	String packageName = "net/minecraft";
 
 	private MappingHistory mappingHistory;
-
 	private JarIndex index;
+
+	private boolean simulate = false;
 
 	public void start() throws IOException {
 		Validate.notNull(newJar);
@@ -87,16 +88,17 @@ public class Generate {
 			handleField(fieldEntry);
 		}
 
-//		System.out.println("Writing history to disk");
-//		mappingHistory.writeToFile(historyFile);
-//
-//		System.out.println("Exporting new mappings");
-//		MappingsEnigmaWriter mappingWriter = new MappingsEnigmaWriter();
-//		mappingWriter.write(outputMappingsFile, newMappings, false);
+		if(!simulate){
+			System.out.println("Writing history to disk");
+			mappingHistory.writeToFile(historyFile);
+
+			System.out.println("Exporting new mappings");
+			MappingsEnigmaWriter mappingWriter = new MappingsEnigmaWriter();
+			mappingWriter.write(outputMappingsFile, newMappings, false);
+		}
 	}
 
 	private void handleClass(ClassEntry classEntry) {
-		//TODO check if it used in the old mappings
 		if (!classEntry.getClassName().contains("/")) { //Skip everything already in a package
 			String match = getClassMatch(classEntry);
 			if(match == null){
@@ -119,7 +121,7 @@ public class Generate {
 	private void handleNewClass(ClassEntry classEntry) {
 		try {
 			String newClassName = mappingHistory.generateClassName(newMinecraftVersion);
-			//System.out.println("NC: " + classEntry.getClassName() + " -> " + newClassName);
+			System.out.println("NC: " + classEntry.getClassName() + " -> " + newClassName);
 			newMappings.addClassMapping(new ClassMapping(classEntry.getClassName(), packageName + "/" + newClassName));
 		} catch (MappingConflict mappingConflict) {
 			throw new RuntimeException("Mappings failed to apply", mappingConflict);
@@ -128,10 +130,9 @@ public class Generate {
 
 	private void handleMatchedClass(ClassEntry entry, String oldName){
 		ClassMapping classMapping = oldMappings.getClassByObf(oldName);
-		String oldClassName = classMapping.getDeobfName();
-		//System.out.println("MC: " + entry.getClassName() + " -> " + oldClassName);
+		System.out.println("MC: " + entry.getClassName() + " -> " + classMapping.getDeobfName());
 		try {
-			newMappings.addClassMapping(new ClassMapping(entry.getClassName(), packageName + "/" + oldClassName));
+			newMappings.addClassMapping(new ClassMapping(entry.getClassName(), packageName + "/" + classMapping.getDeobfName()));
 		} catch (MappingConflict mappingConflict) {
 			throw new RuntimeException("Mappings failed to apply", mappingConflict);
 		}
@@ -195,7 +196,6 @@ public class Generate {
 		String signature = methodEntry.getDesc().toString();
 
 		System.out.println("MM: " + methodEntry.getName() + signature + " -> " + oldMapping.getDeobfName());
-
 		newMappings.getClassByObf(methodEntry.getOwnerClassEntry()).addMethodMapping(new MethodMapping(methodEntry.getName(), methodEntry.getDesc(), oldMapping.getDeobfName()));
 	}
 
@@ -226,14 +226,44 @@ public class Generate {
 			&& fieldEntry.getName().length() > 2) {
 			return;
 		}
-		handleNewField(fieldEntry);
+		String match = getFieldMatch(fieldEntry);
+		if(match != null){
+			handleFieldMatch(fieldEntry, match);
+		} else {
+			handleNewField(fieldEntry);
+		}
 	}
 
 	private void handleNewField(FieldDefEntry fieldEntry) {
 		String signature = fieldEntry.getDesc().toString();
 		String newFieldName = mappingHistory.generateFieldName(signature, newMinecraftVersion);
-		System.out.println("NF: " + fieldEntry.getName() + signature + " -> " + newFieldName + signature);
+		System.out.println("NF: " + fieldEntry.getName() + signature + " -> " + newFieldName);
 		newMappings.getClassByObf(fieldEntry.getOwnerClassEntry()).addFieldMapping(new FieldMapping(fieldEntry.getName(), fieldEntry.getDesc(), newFieldName, Mappings.EntryModifier.UNCHANGED));
+	}
+
+	private void handleFieldMatch(FieldDefEntry fieldEntry, String match){
+		String oldClassName = match.substring(0, match.indexOf("."));
+		ClassMapping oldClass = oldMappings.getClassByObf(oldClassName);
+		String oldFieldDesc = match.substring(match.indexOf(";;") + 2);
+		String s1 = match.substring(match.indexOf(".") + 1);
+		String oldFieldName = s1.substring(0, s1.indexOf(";;"));
+		FieldMapping oldMapping = oldClass.getFieldByObf(oldFieldName, new TypeDescriptor(oldFieldDesc));
+
+		System.out.println("MF: " + fieldEntry.getName() + fieldEntry.getDesc() + " -> " + oldMapping.getDeobfName());
+		newMappings.getClassByObf(fieldEntry.getOwnerClassEntry()).addFieldMapping(new FieldMapping(fieldEntry.getName(), fieldEntry.getDesc(), oldMapping.getDeobfName(), Mappings.EntryModifier.UNCHANGED));
+
+	}
+
+	private String getFieldMatch(FieldDefEntry fieldDefEntry){
+		if(matches != null){
+			String className = fieldDefEntry.getOwnerClassEntry().getClassName();
+			String lookup = className + "." + fieldDefEntry.getName() + ";;" + fieldDefEntry.getDesc().toString();
+			if(matches.fieldMatches.containsValue(lookup)){
+				String match = matches.fieldMatches.inverse().get(lookup);
+				return match;
+			}
+		}
+		return null;
 	}
 
 	public Generate setNewJar(File newJar) {
@@ -278,6 +308,11 @@ public class Generate {
 
 	public Generate setPackageName(String packageName) {
 		this.packageName = packageName;
+		return this;
+	}
+
+	public Generate simulate(){
+		simulate = true;
 		return this;
 	}
 }

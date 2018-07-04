@@ -33,7 +33,6 @@ public class Matches {
 				String oldName = line.substring(2, pos).replaceAll(";", "").substring(1); //Removes some stuff we dont need
 				String newName = line.substring(pos + 1).replaceAll(";", "").substring(1);
 				currentClass = Pair.of(oldName, newName);
-				System.out.println("Class: " + oldName + " -> " + newName);
 				classMatches.put(oldName, newName);
 
 			} else if (line.startsWith("\tm\t") || line.startsWith("\tf\t")) {
@@ -45,10 +44,8 @@ public class Matches {
 					String oldName = line.substring(3, pos);
 					String newName = line.substring(pos + 1);
 					if (line.charAt(1) == 'm') {
-						System.out.println("Method: " + currentClass.getLeft() + "." + oldName + " -> " + currentClass.getRight() + "." + newName);
 						methodMatches.put(currentClass.getLeft() + "." + oldName, currentClass.getRight() + "." + newName);
 					} else {
-						System.out.println("Field: " + currentClass.getLeft() + "." + oldName + " -> " + currentClass.getRight() + "." + newName);
 						fieldMatches.put(currentClass.getLeft() + "." + oldName, currentClass.getRight() + "." + newName);
 					}
 				}
