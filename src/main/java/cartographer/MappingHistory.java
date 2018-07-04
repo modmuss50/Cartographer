@@ -3,8 +3,10 @@ package cartographer;
 import com.google.common.base.Charsets;
 import org.apache.commons.io.FileUtils;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.StringJoiner;
@@ -19,8 +21,31 @@ public class MappingHistory {
 		return history;
 	}
 
-	public static MappingHistory readHistory(File file) {
-		throw new RuntimeException("I need to code this");
+	public static MappingHistory readHistory(File file) throws IOException {
+		MappingHistory history = newMappingsHistory();
+		BufferedReader reader = Files.newBufferedReader(file.toPath());
+		String line;
+		while ((line = reader.readLine()) != null) {
+			if(line.isEmpty()){
+				continue;
+			}
+			if(line.startsWith("CLASS")){
+				String[] split = line.split("\t");
+				NamedEntry entry = new NamedEntry(split[1], split[2], Type.CLASS);
+				history.classes.add(entry);
+			}
+			if(line.startsWith("METHOD")){
+				String[] split = line.split("\t");
+				SignatureEntry entry = new SignatureEntry(split[1], split[2], split[3],Type.METHOD);
+				history.methods.add(entry);
+			}
+			if(line.startsWith("FIELD")){
+				String[] split = line.split("\t");
+				SignatureEntry entry = new SignatureEntry(split[1], split[2], split[3],Type.FIELD);
+				history.fields.add(entry);
+			}
+		}
+		return history;
 	}
 
 	public List<NamedEntry> classes;

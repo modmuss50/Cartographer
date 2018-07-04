@@ -7,9 +7,12 @@ public class Cartographer {
 
 	public static void main(String[] args) throws IOException {
 		new Generate()
-			.setInputJar(new File("1.13-pre6-merged.jar"))
-			.setMcVersion("1.13-pre6")
-			.setOutputMappings(new File("output.tiny"))
+			.setOldJar(new File("1.13-pre3-merged.jar"))
+			.setNewJar(new File("1.13-pre6-merged.jar"))
+			.setNewMinecraftVersion("1.13-pre6")
+			.setOldMappingsFile(new File("1.13-pre3.mappings"))
+			.setOutputMappingsFile(new File("1.13-pre6.mappings"))
+			.setMatchesFile(new File("1.13-pre3-1.13-pre6.matches"))
 			.setHistoryFile(new File("history.txt"))
 			.start();
 	}

@@ -45,4 +45,18 @@ public class Util {
 		return jarIndex.containsObfEntry(obfEntry);
 	}
 
+	public static class ClassMatchResponse {
+		public boolean isNew;
+		public String oldName;
+		public String currentName;
+		public String intermediateName;
+
+		public ClassMatchResponse(boolean isNew, String oldName, String currentName, String intermediateName) {
+			this.isNew = isNew;
+			this.oldName = oldName;
+			this.currentName = currentName;
+			this.intermediateName = intermediateName;
+		}
+	}
+
 }

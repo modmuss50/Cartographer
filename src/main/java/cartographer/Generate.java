@@ -8,6 +8,7 @@ import cuchaz.enigma.mapping.entry.FieldDefEntry;
 import cuchaz.enigma.mapping.entry.MethodDefEntry;
 import cuchaz.enigma.mapping.entry.ReferencedEntryPool;
 import cuchaz.enigma.throwables.MappingConflict;
+import cuchaz.enigma.throwables.MappingParseException;
 import org.apache.commons.lang3.Validate;
 
 import java.io.File;
@@ -16,36 +17,62 @@ import java.util.jar.JarFile;
 
 public class Generate {
 
-	File inputJar;
+	File oldJar;
+	File newJar;
 
-	File outputMappings;
+	private Mappings oldMappings;
+	private Mappings newMappings;
+	private Matches matches;
 
+	File oldMappingsFile;
+	File outputMappingsFile;
 	File historyFile;
+	File matchesFile;
 
-	String mcVersion;
+	String newMinecraftVersion;
 
 	String packageName = "net/minecraft";
 
-	Mappings newMappings;
-
-	MappingHistory mappingHistory;
+	private MappingHistory mappingHistory;
 
 	private JarIndex index;
 
 	public void start() throws IOException {
-		Validate.notNull(inputJar);
-		Validate.notNull(outputMappings);
+		Validate.notNull(newJar);
+		Validate.notNull(outputMappingsFile);
 		Validate.notNull(historyFile);
 		Validate.isTrue(!packageName.isEmpty());
-		Validate.isTrue(!mcVersion.isEmpty());
+		Validate.isTrue(!newMinecraftVersion.isEmpty());
 
 		index = new JarIndex(new ReferencedEntryPool());
-		index.indexJar(new ParsedJar(new JarFile(inputJar)), true);
+		index.indexJar(new ParsedJar(new JarFile(newJar)), true);
 
 		newMappings = new Mappings();
 
-		if (mappingHistory == null) {
+		if(historyFile.exists()){
+			System.out.println("Reading history file");
+			mappingHistory = MappingHistory.readHistory(historyFile);
+		} else {
 			mappingHistory = MappingHistory.newMappingsHistory();
+		}
+
+		if(oldMappingsFile != null && oldMappingsFile.exists()){
+			System.out.println("Reading old mappings");
+			MappingsEnigmaReader mappingReader = new MappingsEnigmaReader();
+			try {
+				oldMappings = mappingReader.read(oldMappingsFile);
+			} catch (MappingParseException e) {
+				throw new RuntimeException("Failed to read input mappings", e);
+			}
+		}
+
+		if(matchesFile != null && matchesFile.exists()){
+			matches = new Matches();
+			System.out.println("Reading matches");
+			matches.read(matchesFile);
+			System.out.println("Found " + matches.classMatches.size() + " matched classes");
+			System.out.println("Found " + matches.methodMatches.size() + " matched methods");
+			System.out.println("Found " + matches.fieldMatches.size() + " matched fields");
 		}
 
 		for (ClassEntry classEntry : index.getObfClassEntries()) {
@@ -60,18 +87,24 @@ public class Generate {
 			handleField(fieldEntry);
 		}
 
-		System.out.println("Writing history to disk");
-		mappingHistory.writeToFile(historyFile);
-
-		System.out.println("Exporting mappings");
-		MappingsEnigmaWriter mappingWriter = new MappingsEnigmaWriter();
-		mappingWriter.write(outputMappings, newMappings, false);
+//		System.out.println("Writing history to disk");
+//		mappingHistory.writeToFile(historyFile);
+//
+//		System.out.println("Exporting new mappings");
+//		MappingsEnigmaWriter mappingWriter = new MappingsEnigmaWriter();
+//		mappingWriter.write(outputMappingsFile, newMappings, false);
 	}
 
 	private void handleClass(ClassEntry classEntry) {
 		//TODO check if it used in the old mappings
 		if (!classEntry.getClassName().contains("/")) { //Skip everything already in a package
-			handleNewClass(classEntry);
+			String match = getClassMatch(classEntry);
+			if(match == null){
+				handleNewClass(classEntry);
+			} else {
+				handleMatchedClass(classEntry, match);
+			}
+
 		} else {
 			//Add the class to the mappings without a new name
 			try {
@@ -85,12 +118,33 @@ public class Generate {
 
 	private void handleNewClass(ClassEntry classEntry) {
 		try {
-			String newClassName = mappingHistory.generateClassName(mcVersion);
-			System.out.println("NC: " + classEntry.getClassName() + " -> " + newClassName);
+			String newClassName = mappingHistory.generateClassName(newMinecraftVersion);
+			//System.out.println("NC: " + classEntry.getClassName() + " -> " + newClassName);
 			newMappings.addClassMapping(new ClassMapping(classEntry.getClassName(), packageName + "/" + newClassName));
 		} catch (MappingConflict mappingConflict) {
 			throw new RuntimeException("Mappings failed to apply", mappingConflict);
 		}
+	}
+
+	private void handleMatchedClass(ClassEntry entry, String oldName){
+		ClassMapping classMapping = oldMappings.getClassByObf(oldName);
+		String oldClassName = classMapping.getDeobfName();
+		//System.out.println("MC: " + entry.getClassName() + " -> " + oldClassName);
+		try {
+			newMappings.addClassMapping(new ClassMapping(entry.getClassName(), packageName + "/" + oldClassName));
+		} catch (MappingConflict mappingConflict) {
+			throw new RuntimeException("Mappings failed to apply", mappingConflict);
+		}
+	}
+
+	private String getClassMatch(ClassEntry classEntry){
+		if(matches != null){
+			if(matches.classMatches.containsValue(classEntry.getClassName())){
+				String match = matches.classMatches.inverse().get(classEntry.getClassName());
+				return match;
+			}
+		}
+		return null;
 	}
 
 	private void handleMethod(MethodDefEntry methodEntry) {
@@ -103,6 +157,9 @@ public class Generate {
 		if (methodEntry.isConstructor()) {
 			return;
 		}
+		if(methodEntry.getAccess().isSynthetic()){
+			return;
+		}
 		//TODO this is a horrible way to figure out if it the entry is mapped
 		if (methodEntry.getOwnerClassEntry() != null
 			&& methodEntry.getOwnerClassEntry().getPackageName() != null
@@ -110,19 +167,56 @@ public class Generate {
 			&& methodEntry.getName().length() > 2) {
 			return;
 		}
-		handleNewMethod(methodEntry);
+		String match = getMethodMatch(methodEntry);
+		if(match != null){
+			handleMatchedMethod(methodEntry, match);
+		} else {
+			handleNewMethod(methodEntry);
+		}
 	}
 
 	private void handleNewMethod(MethodDefEntry methodEntry) {
 		String signature = methodEntry.getDesc().toString();
-		String newMethodName = mappingHistory.generateMethodName(signature, mcVersion);
+		String newMethodName = mappingHistory.generateMethodName(signature, newMinecraftVersion);
 		System.out.println("NM: " + methodEntry.getName() + signature + " -> " + newMethodName + signature);
 
 		newMappings.getClassByObf(methodEntry.getOwnerClassEntry()).addMethodMapping(new MethodMapping(methodEntry.getName(), methodEntry.getDesc(), newMethodName));
 	}
 
+	private void handleMatchedMethod(MethodDefEntry methodEntry, String match) {
+		String oldClassName = match.substring(0, match.indexOf("."));
+		ClassMapping oldClass = oldMappings.getClassByObf(oldClassName);
+		String oldMethodDesc = match.substring(match.indexOf("("));
+		String s1 = match.substring(match.indexOf(".") + 1);
+
+		String oldMethodName = s1.substring(0, s1.indexOf("("));
+		MethodMapping oldMapping = oldClass.getMethodByObf(oldMethodName, new MethodDescriptor(oldMethodDesc));
+
+		String signature = methodEntry.getDesc().toString();
+
+		System.out.println("MM: " + methodEntry.getName() + signature + " -> " + oldMapping.getDeobfName());
+
+		newMappings.getClassByObf(methodEntry.getOwnerClassEntry()).addMethodMapping(new MethodMapping(methodEntry.getName(), methodEntry.getDesc(), oldMapping.getDeobfName()));
+	}
+
+	private String getMethodMatch(MethodDefEntry methodEntry){
+		if(matches != null){
+			String className = methodEntry.getOwnerClassEntry().getClassName();
+			String desc = methodEntry.getDesc().toString();
+			String lookup = className + "." + methodEntry.getName() + desc;
+			if(matches.methodMatches.containsValue(lookup)){
+				String match = matches.methodMatches.inverse().get(lookup);
+				return match;
+			}
+		}
+		return null;
+	}
+
 	private void handleField(FieldDefEntry fieldEntry) {
 		if (!Util.isObfuscatedIdentifier(fieldEntry, true, index)) {
+			return;
+		}
+		if(fieldEntry.getAccess().isSynthetic()){
 			return;
 		}
 		//TODO this is a horrible way to figure out if it the entry is mapped
@@ -137,18 +231,33 @@ public class Generate {
 
 	private void handleNewField(FieldDefEntry fieldEntry) {
 		String signature = fieldEntry.getDesc().toString();
-		String newFieldName = mappingHistory.generateFieldName(signature, mcVersion);
+		String newFieldName = mappingHistory.generateFieldName(signature, newMinecraftVersion);
 		System.out.println("NF: " + fieldEntry.getName() + signature + " -> " + newFieldName + signature);
 		newMappings.getClassByObf(fieldEntry.getOwnerClassEntry()).addFieldMapping(new FieldMapping(fieldEntry.getName(), fieldEntry.getDesc(), newFieldName, Mappings.EntryModifier.UNCHANGED));
 	}
 
-	public Generate setInputJar(File inputJar) {
-		this.inputJar = inputJar;
+	public Generate setNewJar(File newJar) {
+		this.newJar = newJar;
 		return this;
 	}
 
-	public Generate setOutputMappings(File outputMappings) {
-		this.outputMappings = outputMappings;
+	public Generate setOldJar(File oldJar) {
+		this.oldJar = oldJar;
+		return this;
+	}
+
+	public Generate setOldMappingsFile(File oldMappingsFile) {
+		this.oldMappingsFile = oldMappingsFile;
+		return this;
+	}
+
+	public Generate setMatchesFile(File matchesFile) {
+		this.matchesFile = matchesFile;
+		return this;
+	}
+
+	public Generate setOutputMappingsFile(File outputMappings) {
+		this.outputMappingsFile = outputMappings;
 		return this;
 	}
 
@@ -157,8 +266,13 @@ public class Generate {
 		return this;
 	}
 
-	public Generate setMcVersion(String mcVersion) {
-		this.mcVersion = mcVersion;
+	public Generate resetHistory(){
+		historyFile.delete();
+		return this;
+	}
+
+	public Generate setNewMinecraftVersion(String newMinecraftVersion) {
+		this.newMinecraftVersion = newMinecraftVersion;
 		return this;
 	}
 
