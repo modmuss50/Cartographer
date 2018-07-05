@@ -10,9 +10,12 @@ import cuchaz.enigma.mapping.entry.ReferencedEntryPool;
 import cuchaz.enigma.throwables.MappingConflict;
 import cuchaz.enigma.throwables.MappingParseException;
 import org.apache.commons.lang3.Validate;
+import org.apache.commons.lang3.tuple.Pair;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.jar.JarFile;
 
 public class Cartographer {
@@ -29,8 +32,6 @@ public class Cartographer {
 	File historyFile;
 	File matchesFile;
 
-	String newMinecraftVersion;
-
 	String packageName = "net/minecraft";
 
 	private MappingHistory mappingHistory;
@@ -43,21 +44,20 @@ public class Cartographer {
 		Validate.notNull(outputMappingsFile);
 		Validate.notNull(historyFile);
 		Validate.isTrue(!packageName.isEmpty());
-		Validate.isTrue(!newMinecraftVersion.isEmpty());
 
 		index = new JarIndex(new ReferencedEntryPool());
 		index.indexJar(new ParsedJar(new JarFile(newJar)), true);
 
 		newMappings = new Mappings();
 
-		if(historyFile.exists()){
+		if (historyFile.exists()) {
 			System.out.println("Reading history file");
 			mappingHistory = MappingHistory.readHistory(historyFile);
 		} else {
 			mappingHistory = MappingHistory.newMappingsHistory();
 		}
 
-		if(oldMappingsFile != null && oldMappingsFile.exists()){
+		if (oldMappingsFile != null && oldMappingsFile.exists()) {
 			System.out.println("Reading old mappings");
 			MappingsEnigmaReader mappingReader = new MappingsEnigmaReader();
 			try {
@@ -67,12 +67,13 @@ public class Cartographer {
 			}
 		}
 
-		if(matchesFile != null && matchesFile.exists()){
+		if (matchesFile != null && matchesFile.exists()) {
 			matches = new Matches();
 			System.out.println("Reading matches");
 			matches.read(matchesFile);
 			System.out.println("Found " + matches.classMatches.size() + " matched classes");
 			System.out.println("Found " + matches.methodMatches.size() + " matched methods");
+			System.out.println("Found " + matches.methodArgMatches.size() + " matched method args");
 			System.out.println("Found " + matches.fieldMatches.size() + " matched fields");
 		}
 
@@ -88,7 +89,7 @@ public class Cartographer {
 			handleField(fieldEntry);
 		}
 
-		if(!simulate){
+		if (!simulate) {
 			System.out.println("Writing history to disk");
 			mappingHistory.writeToFile(historyFile);
 
@@ -101,7 +102,7 @@ public class Cartographer {
 	private void handleClass(ClassEntry classEntry) {
 		if (!classEntry.getClassName().contains("/")) { //Skip everything already in a package
 			String match = getClassMatch(classEntry);
-			if(match == null){
+			if (match == null) {
 				handleNewClass(classEntry);
 			} else {
 				handleMatchedClass(classEntry, match);
@@ -120,17 +121,17 @@ public class Cartographer {
 
 	private void handleNewClass(ClassEntry classEntry) {
 		try {
-			String newClassName = mappingHistory.generateClassName(newMinecraftVersion);
-			System.out.println("NC: " + classEntry.getClassName() + " -> " + newClassName);
+			String newClassName = mappingHistory.generateClassName();
+			//	System.out.println("NC: " + classEntry.getClassName() + " -> " + newClassName);
 			newMappings.addClassMapping(new ClassMapping(classEntry.getClassName(), packageName + "/" + newClassName));
 		} catch (MappingConflict mappingConflict) {
 			throw new RuntimeException("Mappings failed to apply", mappingConflict);
 		}
 	}
 
-	private void handleMatchedClass(ClassEntry entry, String oldName){
+	private void handleMatchedClass(ClassEntry entry, String oldName) {
 		ClassMapping classMapping = oldMappings.getClassByObf(oldName);
-		System.out.println("MC: " + entry.getClassName() + " -> " + classMapping.getDeobfName());
+		//System.out.println("MC: " + entry.getClassName() + " -> " + classMapping.getDeobfName());
 		try {
 			newMappings.addClassMapping(new ClassMapping(entry.getClassName(), packageName + "/" + classMapping.getDeobfName()));
 		} catch (MappingConflict mappingConflict) {
@@ -138,9 +139,9 @@ public class Cartographer {
 		}
 	}
 
-	private String getClassMatch(ClassEntry classEntry){
-		if(matches != null){
-			if(matches.classMatches.containsValue(classEntry.getClassName())){
+	private String getClassMatch(ClassEntry classEntry) {
+		if (matches != null) {
+			if (matches.classMatches.containsValue(classEntry.getClassName())) {
 				String match = matches.classMatches.inverse().get(classEntry.getClassName());
 				return match;
 			}
@@ -158,7 +159,7 @@ public class Cartographer {
 		if (methodEntry.isConstructor()) {
 			return;
 		}
-		if(methodEntry.getAccess().isSynthetic()){
+		if (methodEntry.getAccess().isSynthetic()) {
 			return;
 		}
 		//TODO this is a horrible way to figure out if it the entry is mapped
@@ -168,23 +169,27 @@ public class Cartographer {
 			&& methodEntry.getName().length() > 2) {
 			return;
 		}
+		Pair<MethodMapping, MethodMapping> mapping;
 		String match = getMethodMatch(methodEntry);
-		if(match != null){
-			handleMatchedMethod(methodEntry, match);
+		if (match != null) {
+			mapping = handleMatchedMethod(methodEntry, match);
 		} else {
-			handleNewMethod(methodEntry);
+			mapping = handleNewMethod(methodEntry);
 		}
+		handleMethodArgs(methodEntry, mapping);
 	}
 
-	private void handleNewMethod(MethodDefEntry methodEntry) {
+	private Pair<MethodMapping, MethodMapping> handleNewMethod(MethodDefEntry methodEntry) {
 		String signature = methodEntry.getDesc().toString();
-		String newMethodName = mappingHistory.generateMethodName(signature, newMinecraftVersion);
+		String newMethodName = mappingHistory.generateMethodName(signature);
 		System.out.println("NM: " + methodEntry.getName() + signature + " -> " + newMethodName + signature);
 
-		newMappings.getClassByObf(methodEntry.getOwnerClassEntry()).addMethodMapping(new MethodMapping(methodEntry.getName(), methodEntry.getDesc(), newMethodName));
+		MethodMapping mapping = new MethodMapping(methodEntry.getName(), methodEntry.getDesc(), newMethodName);
+		newMappings.getClassByObf(methodEntry.getOwnerClassEntry()).addMethodMapping(mapping);
+		return Pair.of(null, mapping);
 	}
 
-	private void handleMatchedMethod(MethodDefEntry methodEntry, String match) {
+	private Pair<MethodMapping, MethodMapping> handleMatchedMethod(MethodDefEntry methodEntry, String match) {
 		String oldClassName = match.substring(0, match.indexOf("."));
 		ClassMapping oldClass = oldMappings.getClassByObf(oldClassName);
 		String oldMethodDesc = match.substring(match.indexOf("("));
@@ -196,16 +201,60 @@ public class Cartographer {
 		String signature = methodEntry.getDesc().toString();
 
 		System.out.println("MM: " + methodEntry.getName() + signature + " -> " + oldMapping.getDeobfName());
-		newMappings.getClassByObf(methodEntry.getOwnerClassEntry()).addMethodMapping(new MethodMapping(methodEntry.getName(), methodEntry.getDesc(), oldMapping.getDeobfName()));
+		MethodMapping mapping = new MethodMapping(methodEntry.getName(), methodEntry.getDesc(), oldMapping.getDeobfName());
+		newMappings.getClassByObf(methodEntry.getOwnerClassEntry()).addMethodMapping(mapping);
+		return Pair.of(oldMapping, mapping);
 	}
 
-	private String getMethodMatch(MethodDefEntry methodEntry){
-		if(matches != null){
-			String className = methodEntry.getOwnerClassEntry().getClassName();
-			String desc = methodEntry.getDesc().toString();
-			String lookup = className + "." + methodEntry.getName() + desc;
-			if(matches.methodMatches.containsValue(lookup)){
+	private String getMethodMatch(MethodDefEntry methodEntry) {
+		if (matches != null) {
+			String lookup = Util.translate(methodEntry);
+			if (matches.methodMatches.containsValue(lookup)) {
 				String match = matches.methodMatches.inverse().get(lookup);
+				return match;
+			}
+		}
+		return null;
+	}
+
+	private void handleMethodArgs(MethodDefEntry methodEntry, Pair<MethodMapping, MethodMapping> methodMappingPair) {
+		int arguments = methodEntry.getDesc().getArgumentDescs().size();
+		MethodMapping oldMapping = methodMappingPair.getLeft();
+		MethodMapping newMapping = methodMappingPair.getRight();
+
+		Map<Integer, LocalVariableMapping> oldArgMappings = new HashMap<>();
+		if (oldMapping != null) {
+			oldMapping.arguments().forEach(localVariableMapping -> oldArgMappings.put(localVariableMapping.getIndex(), localVariableMapping));
+		}
+
+		for (int arg = 0; arg < arguments; arg++) {
+			String match = getMethodArgMatch(methodEntry, arg);
+			if (match != null && oldMapping != null) {
+				int oldArgPos = Integer.parseInt(match.substring(match.indexOf("#") + 1));
+				String oldName = oldArgMappings.get(oldArgPos).getName();
+				try {
+					newMapping.addArgumentMapping(new LocalVariableMapping(arg, oldName));
+				} catch (MappingConflict mappingConflict) {
+					throw new RuntimeException("Failed to map arg", mappingConflict);
+				}
+				System.out.println("\tMP: " + newMapping.getDeobfName() + "_" + arg + " -> " + oldName);
+			} else {
+				String newName = mappingHistory.generateArgName(newMapping, arg);
+				try {
+					newMapping.addArgumentMapping(new LocalVariableMapping(arg, newName));
+				} catch (MappingConflict mappingConflict) {
+					throw new RuntimeException("Failed to map arg", mappingConflict);
+				}
+				System.out.println("\tNP: " + newMapping.getDeobfName() + "_" + arg + " -> " + newName);
+			}
+		}
+	}
+
+	private String getMethodArgMatch(MethodDefEntry methodEntry, int index) {
+		if (matches != null) {
+			String lookup = Util.translate(methodEntry) + "#" + index;
+			if (matches.methodArgMatches.containsValue(lookup)) {
+				String match = matches.methodArgMatches.inverse().get(lookup);
 				return match;
 			}
 		}
@@ -216,7 +265,7 @@ public class Cartographer {
 		if (!Util.isObfuscatedIdentifier(fieldEntry, true, index)) {
 			return;
 		}
-		if(fieldEntry.getAccess().isSynthetic()){
+		if (fieldEntry.getAccess().isSynthetic()) {
 			return;
 		}
 		//TODO this is a horrible way to figure out if it the entry is mapped
@@ -227,7 +276,7 @@ public class Cartographer {
 			return;
 		}
 		String match = getFieldMatch(fieldEntry);
-		if(match != null){
+		if (match != null) {
 			handleFieldMatch(fieldEntry, match);
 		} else {
 			handleNewField(fieldEntry);
@@ -236,12 +285,12 @@ public class Cartographer {
 
 	private void handleNewField(FieldDefEntry fieldEntry) {
 		String signature = fieldEntry.getDesc().toString();
-		String newFieldName = mappingHistory.generateFieldName(signature, newMinecraftVersion);
-		System.out.println("NF: " + fieldEntry.getName() + signature + " -> " + newFieldName);
+		String newFieldName = mappingHistory.generateFieldName(signature);
+		//System.out.println("NF: " + fieldEntry.getName() + signature + " -> " + newFieldName);
 		newMappings.getClassByObf(fieldEntry.getOwnerClassEntry()).addFieldMapping(new FieldMapping(fieldEntry.getName(), fieldEntry.getDesc(), newFieldName, Mappings.EntryModifier.UNCHANGED));
 	}
 
-	private void handleFieldMatch(FieldDefEntry fieldEntry, String match){
+	private void handleFieldMatch(FieldDefEntry fieldEntry, String match) {
 		String oldClassName = match.substring(0, match.indexOf("."));
 		ClassMapping oldClass = oldMappings.getClassByObf(oldClassName);
 		String oldFieldDesc = match.substring(match.indexOf(";;") + 2);
@@ -249,16 +298,16 @@ public class Cartographer {
 		String oldFieldName = s1.substring(0, s1.indexOf(";;"));
 		FieldMapping oldMapping = oldClass.getFieldByObf(oldFieldName, new TypeDescriptor(oldFieldDesc));
 
-		System.out.println("MF: " + fieldEntry.getName() + fieldEntry.getDesc() + " -> " + oldMapping.getDeobfName());
+		//System.out.println("MF: " + fieldEntry.getName() + fieldEntry.getDesc() + " -> " + oldMapping.getDeobfName());
 		newMappings.getClassByObf(fieldEntry.getOwnerClassEntry()).addFieldMapping(new FieldMapping(fieldEntry.getName(), fieldEntry.getDesc(), oldMapping.getDeobfName(), Mappings.EntryModifier.UNCHANGED));
 
 	}
 
-	private String getFieldMatch(FieldDefEntry fieldDefEntry){
-		if(matches != null){
+	private String getFieldMatch(FieldDefEntry fieldDefEntry) {
+		if (matches != null) {
 			String className = fieldDefEntry.getOwnerClassEntry().getClassName();
 			String lookup = className + "." + fieldDefEntry.getName() + ";;" + fieldDefEntry.getDesc().toString();
-			if(matches.fieldMatches.containsValue(lookup)){
+			if (matches.fieldMatches.containsValue(lookup)) {
 				String match = matches.fieldMatches.inverse().get(lookup);
 				return match;
 			}
@@ -296,13 +345,8 @@ public class Cartographer {
 		return this;
 	}
 
-	public Cartographer resetHistory(){
+	public Cartographer resetHistory() {
 		historyFile.delete();
-		return this;
-	}
-
-	public Cartographer setNewMinecraftVersion(String newMinecraftVersion) {
-		this.newMinecraftVersion = newMinecraftVersion;
 		return this;
 	}
 
@@ -311,7 +355,7 @@ public class Cartographer {
 		return this;
 	}
 
-	public Cartographer simulate(){
+	public Cartographer simulate() {
 		simulate = true;
 		return this;
 	}

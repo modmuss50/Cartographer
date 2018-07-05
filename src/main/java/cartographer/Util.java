@@ -2,6 +2,7 @@ package cartographer;
 
 import cuchaz.enigma.analysis.JarIndex;
 import cuchaz.enigma.mapping.entry.Entry;
+import cuchaz.enigma.mapping.entry.MethodDefEntry;
 import cuchaz.enigma.mapping.entry.MethodEntry;
 
 public class Util {
@@ -45,18 +46,10 @@ public class Util {
 		return jarIndex.containsObfEntry(obfEntry);
 	}
 
-	public static class ClassMatchResponse {
-		public boolean isNew;
-		public String oldName;
-		public String currentName;
-		public String intermediateName;
-
-		public ClassMatchResponse(boolean isNew, String oldName, String currentName, String intermediateName) {
-			this.isNew = isNew;
-			this.oldName = oldName;
-			this.currentName = currentName;
-			this.intermediateName = intermediateName;
-		}
+	public static String translate(MethodDefEntry methodEntry) {
+		String className = methodEntry.getOwnerClassEntry().getClassName();
+		String desc = methodEntry.getDesc().toString();
+		return className + "." + methodEntry.getName() + desc;
 	}
 
 }
