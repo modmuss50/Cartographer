@@ -1,9 +1,10 @@
 package cartographer;
 
 import cuchaz.enigma.analysis.JarIndex;
-import cuchaz.enigma.mapping.entry.Entry;
-import cuchaz.enigma.mapping.entry.MethodDefEntry;
-import cuchaz.enigma.mapping.entry.MethodEntry;
+import cuchaz.enigma.mapping.entry.*;
+
+import java.util.HashSet;
+import java.util.Set;
 
 public class Util {
 
@@ -44,6 +45,32 @@ public class Util {
 		}
 
 		return jarIndex.containsObfEntry(obfEntry);
+	}
+
+	public static boolean isMethodProvider(ClassEntry classObfEntry, MethodEntry methodEntry, ReferencedEntryPool entryPool, JarIndex index) {
+		Set<ClassEntry> classEntries = new HashSet<>();
+		addAllPotentialAncestors(classEntries, classObfEntry, entryPool, index);
+
+		for (ClassEntry parentEntry : classEntries) {
+			MethodEntry ancestorMethodEntry = entryPool.getMethod(parentEntry, methodEntry.getName(), methodEntry.getDesc());
+			if (index.containsObfMethod(ancestorMethodEntry)) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	public static void addAllPotentialAncestors(Set<ClassEntry> classEntries, ClassEntry classObfEntry, ReferencedEntryPool entryPool, JarIndex index) {
+		for (ClassEntry interfaceEntry : index.getTranslationIndex().getInterfaces(classObfEntry)) {
+			if (classEntries.add(interfaceEntry)) {
+				addAllPotentialAncestors(classEntries, interfaceEntry, entryPool, index);
+			}
+		}
+		ClassEntry superClassEntry = index.getTranslationIndex().getSuperclass(classObfEntry);
+		if (superClassEntry != null && classEntries.add(superClassEntry)) {
+			addAllPotentialAncestors(classEntries, superClassEntry, entryPool, index);
+		}
 	}
 
 	public static String translate(MethodDefEntry methodEntry) {

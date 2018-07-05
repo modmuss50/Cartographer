@@ -36,6 +36,7 @@ public class Cartographer {
 
 	private MappingHistory mappingHistory;
 	private JarIndex index;
+	private ReferencedEntryPool entryPool;
 
 	private boolean simulate = false;
 
@@ -45,7 +46,8 @@ public class Cartographer {
 		Validate.notNull(historyFile);
 		Validate.isTrue(!packageName.isEmpty());
 
-		index = new JarIndex(new ReferencedEntryPool());
+		entryPool = new ReferencedEntryPool();
+		index = new JarIndex(entryPool);
 		index.indexJar(new ParsedJar(new JarFile(newJar)), true);
 
 		newMappings = new Mappings();
@@ -116,7 +118,6 @@ public class Cartographer {
 				throw new RuntimeException("Mappings failed to apply", mappingConflict);
 			}
 		}
-		//classEntry.
 	}
 
 	private void handleNewClass(ClassEntry classEntry) {
@@ -162,6 +163,11 @@ public class Cartographer {
 		if (methodEntry.getAccess().isSynthetic()) {
 			return;
 		}
+		//We only want to rename the main method, not methods that inherit others. The method names need to be rebuilt once done
+		if (!Util.isMethodProvider(methodEntry.getOwnerClassEntry(), methodEntry, entryPool, index)) {
+			return;
+		}
+
 		//TODO this is a horrible way to figure out if it the entry is mapped
 		if (methodEntry.getOwnerClassEntry() != null
 			&& methodEntry.getOwnerClassEntry().getPackageName() != null
