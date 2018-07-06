@@ -13,7 +13,9 @@ import org.objectweb.asm.tree.ClassNode;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.jar.JarFile;
 
@@ -164,7 +166,8 @@ public class Cartographer {
 		try {
 			String newClassName = mappingHistory.generateClassName();
 			//System.out.println("NC: " + classEntry.getClassName() + " -> " + newClassName);
-			deobfuscator.getMappings().addClassMapping(new ClassMapping(classEntry.getClassName(), packageName + "/" + newClassName));
+			boolean innerClass = classEntry.isInnerClass();
+			deobfuscator.getMappings().addClassMapping(new ClassMapping(classEntry.getClassName(), (innerClass ? "" : packageName + "/") + newClassName));
 		} catch (MappingConflict mappingConflict) {
 			throw new RuntimeException("Mappings failed to apply", mappingConflict);
 		}
@@ -174,7 +177,8 @@ public class Cartographer {
 		ClassMapping classMapping = oldMappings.getClassByObf(oldName);
 		//	System.out.println("MC: " + entry.getClassName() + " -> " + classMapping.getDeobfName());
 		try {
-			deobfuscator.getMappings().addClassMapping(new ClassMapping(entry.getClassName(), packageName + "/" + classMapping.getDeobfName()));
+			boolean innerClass = entry.isInnerClass();
+			deobfuscator.getMappings().addClassMapping(new ClassMapping(entry.getClassName(), (innerClass ? "" : packageName + "/") + classMapping.getDeobfName()));
 		} catch (MappingConflict mappingConflict) {
 			throw new RuntimeException("Mappings failed to apply", mappingConflict);
 		}
@@ -194,36 +198,54 @@ public class Cartographer {
 		if (!deobfuscator.isObfuscatedIdentifier(methodEntry, true)) {
 			return;
 		}
-		if (methodEntry.getName().contains("lambda$")) { //Nope
+		if (methodEntry.getName().contains("$$Lambda$")) { //Nope
 			return;
 		}
 		if (methodEntry.isConstructor()) {
 			return;
 		}
-		//		//We only want to rename the main method, not methods that inherit others. The method names need to be rebuilt once done
-		//		if (!deobfuscator.isMethodProvider(methodEntry.getOwnerClassEntry(), methodEntry)) {
-		//			System.out.println("Skipping " + methodEntry.getName());
-		//			return;
-		//		}
 
 		ClassNode ownerClass = getClassNode(methodEntry.getOwnerClassEntry());
 		Util.ClassData classData = new Util.ClassData(ownerClass, deobfuscator.getJar(), libraryProvider);
 		Util.MethodData lookupMethod = classData.getMethodData(methodEntry);
 		Validate.notNull(lookupMethod);
 
-		boolean foundAncestor = false;
+		List<Util.ClassData> ancestors = new ArrayList<>();
+		classData.getAncestors(ancestors);
+
 		Util.ClassData superClass = classData.superClass;
-		while (superClass != null) {
-			Util.MethodData superMethodCheck = superClass.getMethodData(methodEntry);
-			if (superMethodCheck != null) {
+		boolean foundAncestor = false;
+		for (Util.ClassData ancestor : ancestors) {
+			Util.MethodData ancestorCheck = ancestor.getMethodData(methodEntry);
+			if (ancestorCheck != null) {
 				foundAncestor = true;
+				superClass = ancestor;
 				break;
 			}
-			superClass = superClass.superClass;
+			//Fuck enums
+			if (ancestor.name.equals(Enum.class.getName())) {
+				Util.ClassData dummyEnum = new Util.ClassData(DummyEnum.class);
+				for (Util.MethodData methodData : dummyEnum.methods) {
+					if (methodData.name.equals(methodEntry.getName())) {
+						foundAncestor = true;
+						superClass = ancestor;
+						break;
+					}
+				}
+			}
+		}
+
+		if (classData.superClass.name.equals(Enum.class.getName())) {
+
 		}
 
 		if (foundAncestor) {
 			System.out.println("Skipping as " + methodEntry.toString() + " was found in " + superClass.name);
+			return;
+		}
+
+		//Blame shit like this, https://modmuss50.me/shots/java_2018-07-06_17-44-32.png
+		if (methodEntry.getName().equals("apply")) {
 			return;
 		}
 

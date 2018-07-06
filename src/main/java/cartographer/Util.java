@@ -2,6 +2,7 @@ package cartographer;
 
 import cuchaz.enigma.analysis.ParsedJar;
 import cuchaz.enigma.mapping.entry.MethodDefEntry;
+import org.apache.commons.lang3.Validate;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodNode;
 
@@ -26,6 +27,8 @@ public class Util {
 
 		public ClassData superClass;
 
+		public List<ClassData> interfaces;
+
 		public List<MethodData> methods = new ArrayList<>();
 
 		public ClassData(ClassNode classNode, ParsedJar jar, LibraryProvider libraryProvider) {
@@ -46,24 +49,53 @@ public class Util {
 			} else {
 				this.superClass = new ClassData(superClassNode, jar, libraryProvider);
 			}
-
 			methods.addAll(
 				classNode.methods.stream()
 					.map(MethodData::new)
 					.collect(Collectors.toList())
 			);
+
+			if (!classNode.interfaces.isEmpty()) {
+				interfaces = new ArrayList<>();
+				for (String name : classNode.interfaces) {
+					ClassData interfaceData;
+					ClassNode interfaceNode = jar.getClassNode(name);
+					if (interfaceNode == null) {
+						interfaceNode = libraryProvider.getClassNode(name);
+					}
+					if (interfaceNode == null) {
+						try {
+							interfaceData = new ClassData(name);
+						} catch (Exception e) {
+							throw new RuntimeException("Failed to load info for " + name, e);
+						}
+					} else {
+						interfaceData = new ClassData(interfaceNode, jar, libraryProvider);
+					}
+					Validate.notNull(interfaceData);
+					interfaces.add(interfaceData);
+				}
+			}
+
 		}
 
 		public ClassData(Class clazz) {
 			this.name = clazz.getName();
-			if (!clazz.getName().equals(Object.class.getName())) {
+			if (!clazz.getName().equals(Object.class.getName()) && clazz.getSuperclass() != null) {
 				this.superClass = new ClassData(clazz.getSuperclass());
 			}
 			methods.addAll(
-				Arrays.stream(clazz.getMethods())
+				Arrays.stream(clazz.getDeclaredMethods())
 					.map(MethodData::new)
 					.collect(Collectors.toList())
 			);
+			if (clazz.getInterfaces().length != 0) {
+				interfaces = new ArrayList<>();
+				interfaces.addAll(Arrays.stream(clazz.getInterfaces())
+					.map(ClassData::new)
+					.collect(Collectors.toList())
+				);
+			}
 		}
 
 		public ClassData(String className) throws ClassNotFoundException {
@@ -76,9 +108,33 @@ public class Util {
 					return methodData;
 				}
 			}
+			if (interfaces != null) {
+				for (ClassData iface : interfaces) {
+					MethodData md = iface.getMethodData(methodEntry);
+					if (md != null) {
+						return md;
+					}
+				}
+			}
+			if (superClass != null) {
+				MethodData md = superClass.getMethodData(methodEntry);
+				if (md != null) {
+					return md;
+				}
+			}
 			return null;
 		}
 
+		public void getAncestors(List<ClassData> list) {
+			if (interfaces != null) {
+				list.addAll(interfaces);
+				interfaces.forEach(classData -> classData.getAncestors(list));
+			}
+			if (superClass != null) {
+				list.add(superClass);
+				superClass.getAncestors(list);
+			}
+		}
 	}
 
 	public static class MethodData {
