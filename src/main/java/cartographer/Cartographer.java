@@ -1,16 +1,15 @@
 package cartographer;
 
-import cuchaz.enigma.analysis.JarIndex;
-import cuchaz.enigma.analysis.ParsedJar;
+import cuchaz.enigma.Deobfuscator;
 import cuchaz.enigma.mapping.*;
 import cuchaz.enigma.mapping.entry.ClassEntry;
 import cuchaz.enigma.mapping.entry.FieldDefEntry;
 import cuchaz.enigma.mapping.entry.MethodDefEntry;
-import cuchaz.enigma.mapping.entry.ReferencedEntryPool;
 import cuchaz.enigma.throwables.MappingConflict;
 import cuchaz.enigma.throwables.MappingParseException;
 import org.apache.commons.lang3.Validate;
 import org.apache.commons.lang3.tuple.Pair;
+import org.objectweb.asm.tree.ClassNode;
 
 import java.io.File;
 import java.io.IOException;
@@ -22,9 +21,9 @@ public class Cartographer {
 
 	File oldJar;
 	File newJar;
+	File outputJar;
 
 	private Mappings oldMappings;
-	private Mappings newMappings;
 	private Matches matches;
 
 	File oldMappingsFile;
@@ -35,8 +34,8 @@ public class Cartographer {
 	String packageName = "net/minecraft";
 
 	private MappingHistory mappingHistory;
-	private JarIndex index;
-	private ReferencedEntryPool entryPool;
+	private Deobfuscator deobfuscator;
+	private LibraryProvider libraryProvider;
 
 	private boolean simulate = false;
 
@@ -46,11 +45,7 @@ public class Cartographer {
 		Validate.notNull(historyFile);
 		Validate.isTrue(!packageName.isEmpty());
 
-		entryPool = new ReferencedEntryPool();
-		index = new JarIndex(entryPool);
-		index.indexJar(new ParsedJar(new JarFile(newJar)), true);
-
-		newMappings = new Mappings();
+		deobfuscator = new Deobfuscator(new JarFile(newJar));
 
 		if (historyFile.exists()) {
 			System.out.println("Reading history file");
@@ -79,17 +74,43 @@ public class Cartographer {
 			System.out.println("Found " + matches.fieldMatches.size() + " matched fields");
 		}
 
-		for (ClassEntry classEntry : index.getObfClassEntries()) {
+		if (libraryProvider != null) {
+			System.out.println("Reading libs");
+			libraryProvider.load();
+		}
+
+		System.out.println("Processing classes");
+
+		for (ClassEntry classEntry : deobfuscator.getJarIndex().getObfClassEntries()) {
 			handleClass(classEntry);
 		}
 
-		for (MethodDefEntry methodEntry : index.getObfBehaviorEntries()) {
+		System.out.println("Processing methods");
+		for (MethodDefEntry methodEntry : deobfuscator.getJarIndex().getObfBehaviorEntries()) {
 			handleMethod(methodEntry);
 		}
 
-		for (FieldDefEntry fieldEntry : index.getObfFieldEntries()) {
+		System.out.println("Processing fields");
+		for (FieldDefEntry fieldEntry : deobfuscator.getJarIndex().getObfFieldEntries()) {
 			handleField(fieldEntry);
 		}
+
+		//Destroy this as soon as possible as it can use a lot of ram
+		libraryProvider = null;
+
+		System.out.println("Rebuilding method names");
+
+		deobfuscator.rebuildMethodNames(new Deobfuscator.ProgressListener() {
+			@Override
+			public void init(int totalWork, String title) {
+
+			}
+
+			@Override
+			public void onProgress(int numDone, String message) {
+
+			}
+		});
 
 		if (!simulate) {
 			System.out.println("Writing history to disk");
@@ -97,7 +118,26 @@ public class Cartographer {
 
 			System.out.println("Exporting new mappings");
 			MappingsEnigmaWriter mappingWriter = new MappingsEnigmaWriter();
-			mappingWriter.write(outputMappingsFile, newMappings, false);
+			mappingWriter.write(outputMappingsFile, deobfuscator.getMappings(), false);
+		}
+
+		//TODO move this out into its own class
+		if (outputJar != null) {
+			System.out.println("Exporting jar");
+			if (outputJar.exists()) {
+				outputJar.delete();
+			}
+			deobfuscator.writeJar(outputJar, new Deobfuscator.ProgressListener() {
+				@Override
+				public void init(int totalWork, String title) {
+
+				}
+
+				@Override
+				public void onProgress(int numDone, String message) {
+
+				}
+			});
 		}
 	}
 
@@ -113,7 +153,7 @@ public class Cartographer {
 		} else {
 			//Add the class to the mappings without a new name
 			try {
-				newMappings.addClassMapping(new ClassMapping(classEntry.getClassName()));
+				deobfuscator.getMappings().addClassMapping(new ClassMapping(classEntry.getClassName()));
 			} catch (MappingConflict mappingConflict) {
 				throw new RuntimeException("Mappings failed to apply", mappingConflict);
 			}
@@ -123,8 +163,8 @@ public class Cartographer {
 	private void handleNewClass(ClassEntry classEntry) {
 		try {
 			String newClassName = mappingHistory.generateClassName();
-			//	System.out.println("NC: " + classEntry.getClassName() + " -> " + newClassName);
-			newMappings.addClassMapping(new ClassMapping(classEntry.getClassName(), packageName + "/" + newClassName));
+			//System.out.println("NC: " + classEntry.getClassName() + " -> " + newClassName);
+			deobfuscator.getMappings().addClassMapping(new ClassMapping(classEntry.getClassName(), packageName + "/" + newClassName));
 		} catch (MappingConflict mappingConflict) {
 			throw new RuntimeException("Mappings failed to apply", mappingConflict);
 		}
@@ -132,9 +172,9 @@ public class Cartographer {
 
 	private void handleMatchedClass(ClassEntry entry, String oldName) {
 		ClassMapping classMapping = oldMappings.getClassByObf(oldName);
-		//System.out.println("MC: " + entry.getClassName() + " -> " + classMapping.getDeobfName());
+		//	System.out.println("MC: " + entry.getClassName() + " -> " + classMapping.getDeobfName());
 		try {
-			newMappings.addClassMapping(new ClassMapping(entry.getClassName(), packageName + "/" + classMapping.getDeobfName()));
+			deobfuscator.getMappings().addClassMapping(new ClassMapping(entry.getClassName(), packageName + "/" + classMapping.getDeobfName()));
 		} catch (MappingConflict mappingConflict) {
 			throw new RuntimeException("Mappings failed to apply", mappingConflict);
 		}
@@ -151,7 +191,7 @@ public class Cartographer {
 	}
 
 	private void handleMethod(MethodDefEntry methodEntry) {
-		if (!Util.isObfuscatedIdentifier(methodEntry, true, index)) {
+		if (!deobfuscator.isObfuscatedIdentifier(methodEntry, true)) {
 			return;
 		}
 		if (methodEntry.getName().contains("lambda$")) { //Nope
@@ -160,11 +200,30 @@ public class Cartographer {
 		if (methodEntry.isConstructor()) {
 			return;
 		}
-		if (methodEntry.getAccess().isSynthetic()) {
-			return;
+		//		//We only want to rename the main method, not methods that inherit others. The method names need to be rebuilt once done
+		//		if (!deobfuscator.isMethodProvider(methodEntry.getOwnerClassEntry(), methodEntry)) {
+		//			System.out.println("Skipping " + methodEntry.getName());
+		//			return;
+		//		}
+
+		ClassNode ownerClass = getClassNode(methodEntry.getOwnerClassEntry());
+		Util.ClassData classData = new Util.ClassData(ownerClass, deobfuscator.getJar(), libraryProvider);
+		Util.MethodData lookupMethod = classData.getMethodData(methodEntry);
+		Validate.notNull(lookupMethod);
+
+		boolean foundAncestor = false;
+		Util.ClassData superClass = classData.superClass;
+		while (superClass != null) {
+			Util.MethodData superMethodCheck = superClass.getMethodData(methodEntry);
+			if (superMethodCheck != null) {
+				foundAncestor = true;
+				break;
+			}
+			superClass = superClass.superClass;
 		}
-		//We only want to rename the main method, not methods that inherit others. The method names need to be rebuilt once done
-		if (!Util.isMethodProvider(methodEntry.getOwnerClassEntry(), methodEntry, entryPool, index)) {
+
+		if (foundAncestor) {
+			System.out.println("Skipping as " + methodEntry.toString() + " was found in " + superClass.name);
 			return;
 		}
 
@@ -188,10 +247,10 @@ public class Cartographer {
 	private Pair<MethodMapping, MethodMapping> handleNewMethod(MethodDefEntry methodEntry) {
 		String signature = methodEntry.getDesc().toString();
 		String newMethodName = mappingHistory.generateMethodName(signature);
-		System.out.println("NM: " + methodEntry.getName() + signature + " -> " + newMethodName + signature);
+		//System.out.println("NM: " + methodEntry.getName() + signature + " -> " + newMethodName + signature);
 
 		MethodMapping mapping = new MethodMapping(methodEntry.getName(), methodEntry.getDesc(), newMethodName);
-		newMappings.getClassByObf(methodEntry.getOwnerClassEntry()).addMethodMapping(mapping);
+		deobfuscator.getMappings().getClassByObf(methodEntry.getOwnerClassEntry()).addMethodMapping(mapping);
 		return Pair.of(null, mapping);
 	}
 
@@ -206,9 +265,9 @@ public class Cartographer {
 
 		String signature = methodEntry.getDesc().toString();
 
-		System.out.println("MM: " + methodEntry.getName() + signature + " -> " + oldMapping.getDeobfName());
+		//	System.out.println("MM: " + methodEntry.getName() + signature + " -> " + oldMapping.getDeobfName());
 		MethodMapping mapping = new MethodMapping(methodEntry.getName(), methodEntry.getDesc(), oldMapping.getDeobfName());
-		newMappings.getClassByObf(methodEntry.getOwnerClassEntry()).addMethodMapping(mapping);
+		deobfuscator.getMappings().getClassByObf(methodEntry.getOwnerClassEntry()).addMethodMapping(mapping);
 		return Pair.of(oldMapping, mapping);
 	}
 
@@ -243,7 +302,7 @@ public class Cartographer {
 				} catch (MappingConflict mappingConflict) {
 					throw new RuntimeException("Failed to map arg", mappingConflict);
 				}
-				System.out.println("\tMP: " + newMapping.getDeobfName() + "_" + arg + " -> " + oldName);
+				//System.out.println("\tMP: " + newMapping.getDeobfName() + "_" + arg + " -> " + oldName);
 			} else {
 				String newName = mappingHistory.generateArgName(newMapping, arg);
 				try {
@@ -251,7 +310,7 @@ public class Cartographer {
 				} catch (MappingConflict mappingConflict) {
 					throw new RuntimeException("Failed to map arg", mappingConflict);
 				}
-				System.out.println("\tNP: " + newMapping.getDeobfName() + "_" + arg + " -> " + newName);
+				//	System.out.println("\tNP: " + newMapping.getDeobfName() + "_" + arg + " -> " + newName);
 			}
 		}
 	}
@@ -268,7 +327,7 @@ public class Cartographer {
 	}
 
 	private void handleField(FieldDefEntry fieldEntry) {
-		if (!Util.isObfuscatedIdentifier(fieldEntry, true, index)) {
+		if (!deobfuscator.isObfuscatedIdentifier(fieldEntry, true)) {
 			return;
 		}
 		if (fieldEntry.getAccess().isSynthetic()) {
@@ -293,7 +352,7 @@ public class Cartographer {
 		String signature = fieldEntry.getDesc().toString();
 		String newFieldName = mappingHistory.generateFieldName(signature);
 		//System.out.println("NF: " + fieldEntry.getName() + signature + " -> " + newFieldName);
-		newMappings.getClassByObf(fieldEntry.getOwnerClassEntry()).addFieldMapping(new FieldMapping(fieldEntry.getName(), fieldEntry.getDesc(), newFieldName, Mappings.EntryModifier.UNCHANGED));
+		deobfuscator.getMappings().getClassByObf(fieldEntry.getOwnerClassEntry()).addFieldMapping(new FieldMapping(fieldEntry.getName(), fieldEntry.getDesc(), newFieldName, Mappings.EntryModifier.UNCHANGED));
 	}
 
 	private void handleFieldMatch(FieldDefEntry fieldEntry, String match) {
@@ -304,8 +363,8 @@ public class Cartographer {
 		String oldFieldName = s1.substring(0, s1.indexOf(";;"));
 		FieldMapping oldMapping = oldClass.getFieldByObf(oldFieldName, new TypeDescriptor(oldFieldDesc));
 
-		//System.out.println("MF: " + fieldEntry.getName() + fieldEntry.getDesc() + " -> " + oldMapping.getDeobfName());
-		newMappings.getClassByObf(fieldEntry.getOwnerClassEntry()).addFieldMapping(new FieldMapping(fieldEntry.getName(), fieldEntry.getDesc(), oldMapping.getDeobfName(), Mappings.EntryModifier.UNCHANGED));
+		//	System.out.println("MF: " + fieldEntry.getName() + fieldEntry.getDesc() + " -> " + oldMapping.getDeobfName());
+		deobfuscator.getMappings().getClassByObf(fieldEntry.getOwnerClassEntry()).addFieldMapping(new FieldMapping(fieldEntry.getName(), fieldEntry.getDesc(), oldMapping.getDeobfName(), Mappings.EntryModifier.UNCHANGED));
 
 	}
 
@@ -319,6 +378,14 @@ public class Cartographer {
 			}
 		}
 		return null;
+	}
+
+	private ClassNode getClassNode(ClassEntry classEntry) {
+		return deobfuscator.getJar().getClassNode(classEntry.getName());
+	}
+
+	private ClassNode getClassNode(String className) {
+		return deobfuscator.getJar().getClassNode(className);
 	}
 
 	public Cartographer setNewJar(File newJar) {
@@ -363,6 +430,16 @@ public class Cartographer {
 
 	public Cartographer simulate() {
 		simulate = true;
+		return this;
+	}
+
+	public Cartographer setLibraryProvider(LibraryProvider libraryProvider) {
+		this.libraryProvider = libraryProvider;
+		return this;
+	}
+
+	public Cartographer setOutputJar(File outputJar) {
+		this.outputJar = outputJar;
 		return this;
 	}
 }
