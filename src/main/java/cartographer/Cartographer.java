@@ -198,7 +198,7 @@ public class Cartographer {
 		if (!deobfuscator.isObfuscatedIdentifier(methodEntry, true)) {
 			return;
 		}
-		if (methodEntry.getName().contains("$$Lambda$")) { //Nope
+		if (methodEntry.getName().toLowerCase().contains("lambda$")) { //Nope
 			return;
 		}
 		if (methodEntry.isConstructor()) {
@@ -240,22 +240,14 @@ public class Cartographer {
 		}
 
 		if (foundAncestor) {
-			System.out.println("Skipping as " + methodEntry.toString() + " was found in " + superClass.name);
 			return;
 		}
 
-		//Blame shit like this, https://modmuss50.me/shots/java_2018-07-06_17-44-32.png
-		if (methodEntry.getName().equals("apply")) {
+		if (methodEntry.getName().length() > 3) {
+			System.out.println("Skipping " + methodEntry.getName() + " in " + classData.name);
 			return;
 		}
 
-		//TODO this is a horrible way to figure out if it the entry is mapped
-		if (methodEntry.getOwnerClassEntry() != null
-			&& methodEntry.getOwnerClassEntry().getPackageName() != null
-			&& methodEntry.getOwnerClassEntry().getPackageName().contains("net/minecraft")
-			&& methodEntry.getName().length() > 2) {
-			return;
-		}
 		Pair<MethodMapping, MethodMapping> mapping;
 		String match = getMethodMatch(methodEntry);
 		if (match != null) {
