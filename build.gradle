@@ -19,7 +19,7 @@ repositories {
 
 //ASM 6 is required to read some of mc's new libs
 dependencies {
-	compile ('enigma-asm:enigma:0.12.0.21:lib'){
+	compile ('enigma-asm:enigma:0.12.0.25:lib'){
 		exclude group: 'org.ow2.asm'
 	}
 	compile 'com.google.guava:guava:19.+'

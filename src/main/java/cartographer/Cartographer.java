@@ -5,6 +5,7 @@ import cuchaz.enigma.mapping.*;
 import cuchaz.enigma.mapping.entry.ClassEntry;
 import cuchaz.enigma.mapping.entry.FieldDefEntry;
 import cuchaz.enigma.mapping.entry.MethodDefEntry;
+import cuchaz.enigma.throwables.IllegalNameException;
 import cuchaz.enigma.throwables.MappingConflict;
 import cuchaz.enigma.throwables.MappingParseException;
 import org.apache.commons.lang3.Validate;
@@ -17,6 +18,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.jar.JarFile;
 
 public class Cartographer {
@@ -102,17 +104,21 @@ public class Cartographer {
 
 		System.out.println("Rebuilding method names");
 
+		final AtomicInteger total = new AtomicInteger();
+
 		deobfuscator.rebuildMethodNames(new Deobfuscator.ProgressListener() {
 			@Override
 			public void init(int totalWork, String title) {
-
+				total.set(totalWork);
 			}
 
 			@Override
 			public void onProgress(int numDone, String message) {
-
+				int percentage = (numDone * 100) / total.get();
+				System.out.print("\r" + numDone + "/" + total.get() + "\t\t" + percentage + "%\t\t" + message);
 			}
 		});
+		System.out.println();
 
 		if (!simulate) {
 			System.out.println("Writing history to disk");
@@ -195,14 +201,15 @@ public class Cartographer {
 	}
 
 	private void handleMethod(MethodDefEntry methodEntry) {
+		boolean argsOnly = false;
 		if (!deobfuscator.isObfuscatedIdentifier(methodEntry, true)) {
-			return;
+			argsOnly = true;
 		}
 		if (methodEntry.getName().toLowerCase().contains("lambda$")) { //Nope
-			return;
+			argsOnly = true;
 		}
 		if (methodEntry.isConstructor()) {
-			return;
+			argsOnly = true;
 		}
 
 		ClassNode ownerClass = getClassNode(methodEntry.getOwnerClassEntry());
@@ -213,13 +220,11 @@ public class Cartographer {
 		List<Util.ClassData> ancestors = new ArrayList<>();
 		classData.getAncestors(ancestors);
 
-		Util.ClassData superClass = classData.superClass;
 		boolean foundAncestor = false;
 		for (Util.ClassData ancestor : ancestors) {
 			Util.MethodData ancestorCheck = ancestor.getMethodData(methodEntry);
 			if (ancestorCheck != null) {
 				foundAncestor = true;
-				superClass = ancestor;
 				break;
 			}
 			//Fuck enums
@@ -228,33 +233,48 @@ public class Cartographer {
 				for (Util.MethodData methodData : dummyEnum.methods) {
 					if (methodData.name.equals(methodEntry.getName())) {
 						foundAncestor = true;
-						superClass = ancestor;
 						break;
 					}
 				}
 			}
 		}
 
-		if (classData.superClass.name.equals(Enum.class.getName())) {
-
-		}
 
 		if (foundAncestor) {
 			return;
 		}
 
 		if (methodEntry.getName().length() > 3) {
-			System.out.println("Skipping " + methodEntry.getName() + " in " + classData.name);
+			argsOnly = true;
+		}
+
+		//We dont want sub method args to be remapped
+		if(!deobfuscator.isMethodProvider(methodEntry.getOwnerClassEntry(), methodEntry)){
+			System.out.println("Found in MC jar " + methodEntry.getName() + "-" + methodEntry.getOwnerClassEntry().getClassName());
+			return;
+		}
+
+		try {
+			NameValidator.validateMethodName(methodEntry.getName());
+		} catch (IllegalNameException e){
 			return;
 		}
 
 		Pair<MethodMapping, MethodMapping> mapping;
-		String match = getMethodMatch(methodEntry);
-		if (match != null) {
-			mapping = handleMatchedMethod(methodEntry, match);
+		if(!argsOnly){
+			String match = getMethodMatch(methodEntry);
+			if (match != null) {
+				mapping = handleMatchedMethod(methodEntry, match);
+			} else {
+				mapping = handleNewMethod(methodEntry);
+			}
 		} else {
-			mapping = handleNewMethod(methodEntry);
+			//Lets give it a mapping so we can give it custom arg mappings
+			MethodMapping methodMapping = new MethodMapping(methodEntry.getName(), methodEntry.getDesc(), methodEntry.getName());
+			deobfuscator.getMappings().getClassByObf(methodEntry.getOwnerClassEntry()).addMethodMapping(methodMapping);
+			mapping = Pair.of(null, methodMapping);
 		}
+
 		handleMethodArgs(methodEntry, mapping);
 	}
 
@@ -318,7 +338,7 @@ public class Cartographer {
 				}
 				//System.out.println("\tMP: " + newMapping.getDeobfName() + "_" + arg + " -> " + oldName);
 			} else {
-				String newName = mappingHistory.generateArgName(newMapping, arg);
+				String newName = mappingHistory.generateArgName();
 				try {
 					newMapping.addArgumentMapping(new LocalVariableMapping(arg, newName));
 				} catch (MappingConflict mappingConflict) {
@@ -348,10 +368,7 @@ public class Cartographer {
 			return;
 		}
 		//TODO this is a horrible way to figure out if it the entry is mapped
-		if (fieldEntry.getOwnerClassEntry() != null
-			&& fieldEntry.getOwnerClassEntry().getPackageName() != null
-			&& fieldEntry.getOwnerClassEntry().getPackageName().contains("net/minecraft")
-			&& fieldEntry.getName().length() > 2) {
+		if (fieldEntry.getName().length() > 2) {
 			return;
 		}
 		String match = getFieldMatch(fieldEntry);
