@@ -2,7 +2,6 @@ package cartographer;
 
 import com.google.common.base.Charsets;
 import com.google.common.base.Predicate;
-import cuchaz.enigma.mapping.MethodMapping;
 import org.apache.commons.io.FileUtils;
 
 import java.io.BufferedReader;

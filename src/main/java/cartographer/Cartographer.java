@@ -14,10 +14,7 @@ import org.objectweb.asm.tree.ClassNode;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.jar.JarFile;
 
@@ -83,19 +80,26 @@ public class Cartographer {
 			libraryProvider.load();
 		}
 
-		System.out.println("Processing classes");
+		List<ClassEntry> classEntries = new ArrayList<>(deobfuscator.getJarIndex().getObfClassEntries());
+		List<MethodDefEntry> methodEntries = new ArrayList<>(deobfuscator.getJarIndex().getObfBehaviorEntries());
+		List<FieldDefEntry> fieldEntries = new ArrayList<>(deobfuscator.getJarIndex().getObfFieldEntries());
 
-		for (ClassEntry classEntry : deobfuscator.getJarIndex().getObfClassEntries()) {
+		classEntries.sort(Comparator.comparingInt(o -> Util.getObfIndex(o.getName())));
+		methodEntries.sort(Comparator.comparingInt(o -> Util.getObfIndex(o.getName())));
+		fieldEntries.sort(Comparator.comparingInt(o -> Util.getObfIndex(o.getName())));
+
+		System.out.println("Processing classes");
+		for (ClassEntry classEntry : classEntries) {
 			handleClass(classEntry);
 		}
 
 		System.out.println("Processing methods");
-		for (MethodDefEntry methodEntry : deobfuscator.getJarIndex().getObfBehaviorEntries()) {
+		for (MethodDefEntry methodEntry : methodEntries) {
 			handleMethod(methodEntry);
 		}
 
 		System.out.println("Processing fields");
-		for (FieldDefEntry fieldEntry : deobfuscator.getJarIndex().getObfFieldEntries()) {
+		for (FieldDefEntry fieldEntry : fieldEntries) {
 			handleField(fieldEntry);
 		}
 
@@ -239,7 +243,6 @@ public class Cartographer {
 			}
 		}
 
-
 		if (foundAncestor) {
 			return;
 		}
@@ -249,19 +252,19 @@ public class Cartographer {
 		}
 
 		//We dont want sub method args to be remapped
-		if(!deobfuscator.isMethodProvider(methodEntry.getOwnerClassEntry(), methodEntry)){
+		if (!deobfuscator.isMethodProvider(methodEntry.getOwnerClassEntry(), methodEntry)) {
 			System.out.println("Found in MC jar " + methodEntry.getName() + "-" + methodEntry.getOwnerClassEntry().getClassName());
 			return;
 		}
 
 		try {
 			NameValidator.validateMethodName(methodEntry.getName());
-		} catch (IllegalNameException e){
+		} catch (IllegalNameException e) {
 			return;
 		}
 
 		Pair<MethodMapping, MethodMapping> mapping;
-		if(!argsOnly){
+		if (!argsOnly) {
 			String match = getMethodMatch(methodEntry);
 			if (match != null) {
 				mapping = handleMatchedMethod(methodEntry, match);

@@ -190,4 +190,26 @@ public class Util {
 		return s + getDescriptorForClass(m.getReturnType());
 	}
 
+	//Thanks thiakil
+	public static int getObfIndex(String in) {
+		if (in == null || in.isEmpty()) {
+			return 0;
+		}
+		int result = 0;
+		for (int col = in.length(); col > 0; col--) {
+			result += (Math.pow(26, col - 1) * getDigit(in.charAt(in.length() - col)));
+		}
+		return result;
+	}
+
+	//Thanks thiakil
+	public static int getDigit(char c) {
+		if (c >= 'A' && c <= 'Z') {
+			return c - 'A' + 1;
+		} else if (c >= 'a' && c <= 'z') {
+			return c - 'a' + 1;
+		}
+		return 0;
+	}
+
 }
