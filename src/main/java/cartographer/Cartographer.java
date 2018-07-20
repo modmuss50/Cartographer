@@ -205,15 +205,14 @@ public class Cartographer {
 	}
 
 	private void handleMethod(MethodDefEntry methodEntry) {
-		boolean argsOnly = false;
 		if (!deobfuscator.isObfuscatedIdentifier(methodEntry, true)) {
-			argsOnly = true;
+			return;
 		}
 		if (methodEntry.getName().toLowerCase().contains("lambda$")) { //Nope
-			argsOnly = true;
+			return;
 		}
 		if (methodEntry.isConstructor()) {
-			argsOnly = true;
+			return;
 		}
 
 		ClassNode ownerClass = getClassNode(methodEntry.getOwnerClassEntry());
@@ -248,7 +247,7 @@ public class Cartographer {
 		}
 
 		if (methodEntry.getName().length() > 3) {
-			argsOnly = true;
+			return;
 		}
 
 		//We dont want sub method args to be remapped
@@ -264,20 +263,12 @@ public class Cartographer {
 		}
 
 		Pair<MethodMapping, MethodMapping> mapping;
-		if (!argsOnly) {
-			String match = getMethodMatch(methodEntry);
-			if (match != null) {
-				mapping = handleMatchedMethod(methodEntry, match);
-			} else {
-				mapping = handleNewMethod(methodEntry);
-			}
+		String match = getMethodMatch(methodEntry);
+		if (match != null) {
+			mapping = handleMatchedMethod(methodEntry, match);
 		} else {
-			//Lets give it a mapping so we can give it custom arg mappings
-			MethodMapping methodMapping = new MethodMapping(methodEntry.getName(), methodEntry.getDesc(), methodEntry.getName());
-			deobfuscator.getMappings().getClassByObf(methodEntry.getOwnerClassEntry()).addMethodMapping(methodMapping);
-			mapping = Pair.of(null, methodMapping);
+			mapping = handleNewMethod(methodEntry);
 		}
-
 		handleMethodArgs(methodEntry, mapping);
 	}
 
@@ -341,7 +332,7 @@ public class Cartographer {
 				}
 				//System.out.println("\tMP: " + newMapping.getDeobfName() + "_" + arg + " -> " + oldName);
 			} else {
-				String newName = mappingHistory.generateArgName();
+				String newName = mappingHistory.generateArgName(newMapping, arg);
 				try {
 					newMapping.addArgumentMapping(new LocalVariableMapping(arg, newName));
 				} catch (MappingConflict mappingConflict) {
