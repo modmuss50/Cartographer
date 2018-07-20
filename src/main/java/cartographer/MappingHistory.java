@@ -76,8 +76,10 @@ public class MappingHistory {
 		return newMethodName;
 	}
 
-	public String generateArgName() {
-		String newArgName = "param_" + args.size();
+	public String generateArgName(MethodMapping methodMapping, int index) {
+		int method = Integer.parseInt(methodMapping.getDeobfName().substring(methodMapping.getDeobfName().indexOf("_") + 1));
+		List<NamedEntry> existingNames = findArgMappingsForMethod(method);
+		String newArgName = "param_" + method + "_" + existingNames.size();
 		NamedEntry newArgEntry = new NamedEntry(newArgName, Type.ARG);
 		args.add(newArgEntry);
 		return newArgName;
@@ -99,7 +101,7 @@ public class MappingHistory {
 		FileUtils.writeStringToFile(file, output.toString(), Charsets.UTF_8);
 	}
 
-	private List<NamedEntry> findArgMappingsForMethod(String method) {
+	private List<NamedEntry> findArgMappingsForMethod(int method) {
 		return args.stream()
 			.filter((Predicate<NamedEntry>) input -> input.name.startsWith("param_" + method + "_"))
 			.collect(Collectors.toList());
