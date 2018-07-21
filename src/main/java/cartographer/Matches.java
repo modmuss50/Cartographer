@@ -62,7 +62,6 @@ public class Matches {
 					}
 					int oldPos = Integer.parseInt(line.substring(5, pos));
 					int newPos = Integer.parseInt(line.substring(pos + 1));
-					System.out.println("Arg: " + currentClass.getLeft() + "." + currentMethod.getLeft() + "#" + oldPos + " = " + currentClass.getRight() + "." + currentMethod.getRight() + "#" + newPos);
 					methodArgMatches.put(currentClass.getLeft() + "." + currentMethod.getLeft() + "#" + oldPos, currentClass.getRight() + "." + currentMethod.getRight() + "#" + newPos);
 				}
 			}

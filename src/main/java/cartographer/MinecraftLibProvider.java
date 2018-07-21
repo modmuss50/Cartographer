@@ -24,7 +24,7 @@ public class MinecraftLibProvider extends LibraryProvider {
 
 	public MinecraftLibProvider(String mcVersion) {
 		this.mcVersion = mcVersion;
-		this.store = new File("mclibs." + mcVersion);
+		this.store = new File("mclibs/" + mcVersion);
 	}
 
 	@Override
@@ -55,7 +55,6 @@ public class MinecraftLibProvider extends LibraryProvider {
 			String path = artifact.get("path").getAsString();
 			File output = new File(store, path.substring(path.lastIndexOf("/")));
 			if (!output.exists()) {
-				System.out.println("Downloading... " + artifact.get("url").getAsString());
 				FileUtils.copyURLToFile(new URL(artifact.get("url").getAsString()), output);
 			}
 
