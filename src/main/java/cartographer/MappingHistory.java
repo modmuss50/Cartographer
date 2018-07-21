@@ -2,7 +2,6 @@ package cartographer;
 
 import com.google.common.base.Charsets;
 import com.google.common.base.Predicate;
-import cuchaz.enigma.mapping.MethodMapping;
 import org.apache.commons.io.FileUtils;
 
 import java.io.BufferedReader;
@@ -76,8 +75,8 @@ public class MappingHistory {
 		return newMethodName;
 	}
 
-	public String generateArgName(MethodMapping methodMapping, int index) {
-		int method = Integer.parseInt(methodMapping.getDeobfName().substring(methodMapping.getDeobfName().indexOf("_") + 1));
+	public String generateArgName(String name) {
+		int method = Integer.parseInt(name.substring(name.indexOf("_") + 1));
 		List<NamedEntry> existingNames = findArgMappingsForMethod(method);
 		String newArgName = "param_" + method + "_" + existingNames.size();
 		NamedEntry newArgEntry = new NamedEntry(newArgName, Type.ARG);

@@ -11,7 +11,7 @@ import cuchaz.enigma.throwables.MappingConflict;
 import cuchaz.enigma.throwables.MappingParseException;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang3.Validate;
-import org.apache.commons.lang3.tuple.Pair;
+import org.apache.commons.lang3.tuple.Triple;
 import org.objectweb.asm.tree.ClassNode;
 
 import java.io.File;
@@ -260,9 +260,6 @@ public class Cartographer {
 		if (methodEntry.getName().toLowerCase().contains("lambda$")) { //Nope
 			return;
 		}
-		if (methodEntry.isConstructor()) { //TODO give this some args
-			return;
-		}
 
 		ClassNode ownerClass = getClassNode(methodEntry.getOwnerClassEntry());
 		Util.ClassData classData = new Util.ClassData(ownerClass, deobfuscator.getJar(), libraryProvider);
@@ -295,7 +292,7 @@ public class Cartographer {
 			return;
 		}
 
-		if (methodEntry.getName().length() > 3) {
+		if (methodEntry.getName().length() > 3 && !methodEntry.isConstructor()) {
 			return;
 		}
 
@@ -311,7 +308,7 @@ public class Cartographer {
 			return;
 		}
 
-		Pair<MethodMapping, MethodMapping> mapping;
+		Triple<MethodMapping, String, MethodMapping> mapping;
 		String match = getMethodMatch(methodEntry);
 		if (match != null) {
 			mapping = handleMatchedMethod(methodEntry, match);
@@ -323,21 +320,24 @@ public class Cartographer {
 		handleMethodArgs(methodEntry, mapping);
 	}
 
-	private Pair<MethodMapping, MethodMapping> handleNewMethod(MethodDefEntry methodEntry) {
+	private Triple<MethodMapping, String, MethodMapping> handleNewMethod(MethodDefEntry methodEntry) {
 		String signature = methodEntry.getDesc().toString();
 		String newMethodName = mappingHistory.generateMethodName(signature);
 		log("NM: " + methodEntry.getName() + signature + " -> " + newMethodName + signature);
 
-		MethodMapping mapping = new MethodMapping(methodEntry.getName(), methodEntry.getDesc(), newMethodName);
+		MethodMapping mapping = new MethodMapping(methodEntry.getName(), methodEntry.getDesc());
+		if(!methodEntry.isConstructor()){
+			mapping.setDeobfName(newMethodName);
+		}
 		ClassMapping classMapping = getClassMapping(methodEntry.getOwnerClassEntry(), false);
 		if (classMapping == null) {
 			throw new RuntimeException("Failed to get mapping for owner class: " + methodEntry.getOwnerClassEntry() + " for method: " + methodEntry);
 		}
 		classMapping.addMethodMapping(mapping);
-		return Pair.of(null, mapping);
+		return Triple.of(null, newMethodName, mapping);
 	}
 
-	private Pair<MethodMapping, MethodMapping> handleMatchedMethod(MethodDefEntry methodEntry, String match) {
+	private Triple<MethodMapping, String, MethodMapping> handleMatchedMethod(MethodDefEntry methodEntry, String match) {
 		String oldClassName = match.substring(0, match.indexOf("."));
 		ClassMapping oldClass = getOldClassMapping(oldClassName);
 		if(oldClass == null){
@@ -348,6 +348,9 @@ public class Cartographer {
 
 		String oldMethodName = s1.substring(0, s1.indexOf("("));
 		MethodMapping oldMapping = oldClass.getMethodByObf(oldMethodName, new MethodDescriptor(oldMethodDesc));
+		if(methodEntry.isConstructor()){
+			throw new RuntimeException("This needs to be added");
+		}
 
 		String signature = methodEntry.getDesc().toString();
 
@@ -356,10 +359,13 @@ public class Cartographer {
 			System.out.println("A matched method " + methodEntry.toString() + " did not a previous mapping, creating a new entry");
 			return handleNewMethod(methodEntry);
 		}
-		MethodMapping mapping = new MethodMapping(methodEntry.getName(), methodEntry.getDesc(), oldMapping.getDeobfName());
+		MethodMapping mapping = new MethodMapping(methodEntry.getName(), methodEntry.getDesc());
+		if(!methodEntry.isConstructor()){
+			mapping.setDeobfName(oldMapping.getDeobfName());
+		}
 		ClassMapping classMapping = getClassMapping(methodEntry.getOwnerClassEntry(), false);
 		classMapping.addMethodMapping(mapping);
-		return Pair.of(oldMapping, mapping);
+		return Triple.of(oldMapping, oldMapping.getDeobfName(), mapping);
 	}
 
 	private String getMethodMatch(MethodDefEntry methodEntry) {
@@ -373,10 +379,11 @@ public class Cartographer {
 		return null;
 	}
 
-	private void handleMethodArgs(MethodDefEntry methodEntry, Pair<MethodMapping, MethodMapping> methodMappingPair) {
+	private void handleMethodArgs(MethodDefEntry methodEntry, Triple<MethodMapping, String, MethodMapping> methodMappingInfo) {
 		int arguments = methodEntry.getDesc().getArgumentDescs().size();
-		MethodMapping oldMapping = methodMappingPair.getLeft();
-		MethodMapping newMapping = methodMappingPair.getRight();
+		MethodMapping oldMapping = methodMappingInfo.getLeft();
+		MethodMapping newMapping = methodMappingInfo.getRight();
+		String methodName = methodMappingInfo.getMiddle();
 
 		Map<Integer, LocalVariableMapping> oldArgMappings = new HashMap<>();
 		if (oldMapping != null) {
@@ -393,15 +400,15 @@ public class Cartographer {
 				} catch (MappingConflict mappingConflict) {
 					throw new RuntimeException("Failed to map arg", mappingConflict);
 				}
-				log("\tMP: " + newMapping.getDeobfName() + "_" + arg + " -> " + oldName);
+				log("\tMP: " + newMapping.toString() + "_" + arg + " -> " + oldName);
 			} else {
-				String newName = mappingHistory.generateArgName(newMapping, arg);
+				String newName = mappingHistory.generateArgName(methodName);
 				try {
 					newMapping.addArgumentMapping(new LocalVariableMapping(arg, newName));
 				} catch (MappingConflict mappingConflict) {
 					throw new RuntimeException("Failed to map arg", mappingConflict);
 				}
-				log("\tNP: " + newMapping.getDeobfName() + "_" + arg + " -> " + newName);
+				log("\tNP: " + newMapping.toString() + "_" + arg + " -> " + newName);
 			}
 		}
 	}
