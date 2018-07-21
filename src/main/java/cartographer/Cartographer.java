@@ -83,10 +83,10 @@ public class Cartographer {
 			matches = new Matches();
 			System.out.println("Reading matches");
 			matches.read(matchesFile);
-//			System.out.println("Found " + matches.classMatches.size() + " matched classes");
-//			System.out.println("Found " + matches.methodMatches.size() + " matched methods");
-//			System.out.println("Found " + matches.methodArgMatches.size() + " matched method args");
-//			System.out.println("Found " + matches.fieldMatches.size() + " matched fields");
+			//			System.out.println("Found " + matches.classMatches.size() + " matched classes");
+			//			System.out.println("Found " + matches.methodMatches.size() + " matched methods");
+			//			System.out.println("Found " + matches.methodArgMatches.size() + " matched method args");
+			//			System.out.println("Found " + matches.fieldMatches.size() + " matched fields");
 		}
 
 		if (libraryProvider != null) {
@@ -101,8 +101,8 @@ public class Cartographer {
 		classEntries.sort(Comparator.comparingInt(o -> Util.getObfIndex(o.getName())));
 
 		Comparator<Object> entryComparator = Comparator
-			.comparingInt(o -> Util.getObfIndex((((Entry)o).getOwnerClassEntry().getName())))
-			.thenComparingInt(o -> Util.getObfIndex((((Entry)o).getName())));
+			.comparingInt(o -> Util.getObfIndex((((Entry) o).getOwnerClassEntry().getName())))
+			.thenComparingInt(o -> Util.getObfIndex((((Entry) o).getName())));
 
 		methodEntries.sort(entryComparator);
 		fieldEntries.sort(entryComparator);
@@ -174,7 +174,7 @@ public class Cartographer {
 				}
 			});
 		}
-		if(logFile != null){
+		if (logFile != null) {
 			try {
 				FileUtils.writeStringToFile(logFile, logger.toString(), StandardCharsets.UTF_8);
 			} catch (IOException e) {
@@ -191,7 +191,7 @@ public class Cartographer {
 				newClasses++;
 			} else {
 				handleMatchedClass(classEntry, match);
-				matchedClasses ++;
+				matchedClasses++;
 			}
 
 		} else {
@@ -206,10 +206,9 @@ public class Cartographer {
 
 	private void handleNewClass(ClassEntry classEntry) {
 		try {
-
 			String newClassName = mappingHistory.generateClassName();
 			boolean innerClass = classEntry.isInnerClass();
-			if(!innerClass){
+			if (!innerClass) {
 				deobfuscator.getMappings().addClassMapping(new ClassMapping(classEntry.getClassName(), (innerClass ? "" : packageName + "/") + newClassName));
 				log("NC: " + classEntry.getClassName() + " -> " + newClassName);
 			} else {
@@ -222,37 +221,23 @@ public class Cartographer {
 		}
 	}
 
-	private ClassMapping getClassMapping(ClassEntry classEntry, boolean stopAtParent){
-		List<ClassEntry> chain = classEntry.getClassChain();
-		ClassMapping parentMapping = null;
-		for(ClassEntry parent : chain){
-			if(parentMapping == null){
-				parentMapping = deobfuscator.getMappings().getClassByObf(parent);
-			} else {
-				if(stopAtParent && chain.get(chain.size() -1).equals(parent)){
-					break;
-				}
-				ClassMapping mapping = parentMapping.getInnerClassByObfSimple(parent.getInnermostClassName());
-				if(mapping == null){
-					try {
-						mapping = new ClassMapping(parent.getInnermostClassName());
-						parentMapping.addInnerClassMapping(mapping);
-					} catch (MappingConflict mappingConflict) {
-						throw new RuntimeException("A fatal error occurred", mappingConflict);
-					}
-				}
-				parentMapping = mapping;
-			}
-		}
-		return parentMapping;
-	}
-
 	private void handleMatchedClass(ClassEntry entry, String oldName) {
-		ClassMapping classMapping = oldMappings.getClassByObf(oldName);
-		log("MC: " + entry.getClassName() + " -> " + classMapping.getDeobfName());
+		boolean innerClass = entry.isInnerClass();
+		ClassMapping oldClassMapping = getOldClassMapping(oldName);
+		if(oldClassMapping == null){
+			throw new RuntimeException("Failed to find old mapping for " + oldName);
+		}
+
 		try {
-			boolean innerClass = entry.isInnerClass();
-			deobfuscator.getMappings().addClassMapping(new ClassMapping(entry.getClassName(), classMapping.getDeobfName()));
+			if(!innerClass){
+				deobfuscator.getMappings().addClassMapping(new ClassMapping(entry.getClassName(), oldClassMapping.getDeobfName()));
+				log("MC: " + entry.getClassName() + " -> " + oldClassMapping.getDeobfName());
+			} else {
+				ClassMapping parentMapping = getClassMapping(entry, true);
+				log("MIC: " + entry.getOwnerClassEntry().getName() + "." + entry.getClassName() + " -> " + oldClassMapping.getDeobfName());
+				parentMapping.addInnerClassMapping(new ClassMapping(entry.getOuterClassName() + "$" + entry.getInnermostClassName(), oldClassMapping.getDeobfName()));
+			}
+
 		} catch (MappingConflict mappingConflict) {
 			throw new RuntimeException("Mappings failed to apply", mappingConflict);
 		}
@@ -333,7 +318,7 @@ public class Cartographer {
 			matchedMethods++;
 		} else {
 			mapping = handleNewMethod(methodEntry);
-			newMethods ++;
+			newMethods++;
 		}
 		handleMethodArgs(methodEntry, mapping);
 	}
@@ -345,7 +330,7 @@ public class Cartographer {
 
 		MethodMapping mapping = new MethodMapping(methodEntry.getName(), methodEntry.getDesc(), newMethodName);
 		ClassMapping classMapping = getClassMapping(methodEntry.getOwnerClassEntry(), false);
-		if(classMapping == null){
+		if (classMapping == null) {
 			throw new RuntimeException("Failed to get mapping for owner class: " + methodEntry.getOwnerClassEntry() + " for method: " + methodEntry);
 		}
 		classMapping.addMethodMapping(mapping);
@@ -354,7 +339,10 @@ public class Cartographer {
 
 	private Pair<MethodMapping, MethodMapping> handleMatchedMethod(MethodDefEntry methodEntry, String match) {
 		String oldClassName = match.substring(0, match.indexOf("."));
-		ClassMapping oldClass = oldMappings.getClassByObf(oldClassName);
+		ClassMapping oldClass = getOldClassMapping(oldClassName);
+		if(oldClass == null){
+			throw new RuntimeException("Failed to get mapping for: " + oldClassName);
+		}
 		String oldMethodDesc = match.substring(match.indexOf("("));
 		String s1 = match.substring(match.indexOf(".") + 1);
 
@@ -364,12 +352,13 @@ public class Cartographer {
 		String signature = methodEntry.getDesc().toString();
 
 		log("MM: " + methodEntry.getName() + signature + " -> " + (oldMapping == null ? "null" : oldMapping.getDeobfName()));
-		if(oldMapping == null || oldMapping.getDeobfName() == null){
+		if (oldMapping == null || oldMapping.getDeobfName() == null) {
 			System.out.println("A matched method " + methodEntry.toString() + " did not a previous mapping, creating a new entry");
 			return handleNewMethod(methodEntry);
 		}
 		MethodMapping mapping = new MethodMapping(methodEntry.getName(), methodEntry.getDesc(), oldMapping.getDeobfName());
-		deobfuscator.getMappings().getClassByObf(methodEntry.getOwnerClassEntry()).addMethodMapping(mapping);
+		ClassMapping classMapping = getClassMapping(methodEntry.getOwnerClassEntry(), false);
+		classMapping.addMethodMapping(mapping);
 		return Pair.of(oldMapping, mapping);
 	}
 
@@ -454,7 +443,7 @@ public class Cartographer {
 		String newFieldName = mappingHistory.generateFieldName(signature);
 		log("NF: " + fieldEntry.toString() + " -> " + newFieldName);
 		ClassMapping classMapping = getClassMapping(fieldEntry.getOwnerClassEntry(), false);
-		if(classMapping == null){
+		if (classMapping == null) {
 			throw new RuntimeException("Failed to get mapping for owner class: " + fieldEntry.getOwnerClassEntry() + " for field: " + fieldEntry);
 		}
 		classMapping.addFieldMapping(new FieldMapping(fieldEntry.getName(), fieldEntry.getDesc(), newFieldName, Mappings.EntryModifier.UNCHANGED));
@@ -462,7 +451,10 @@ public class Cartographer {
 
 	private void handleFieldMatch(FieldDefEntry fieldEntry, String match) {
 		String oldClassName = match.substring(0, match.indexOf("."));
-		ClassMapping oldClass = oldMappings.getClassByObf(oldClassName);
+		ClassMapping oldClass = getOldClassMapping(oldClassName);
+		if(oldClass == null){
+			throw new RuntimeException("Failed to get mapping for: " + oldClassName);
+		}
 		String oldFieldDesc = match.substring(match.indexOf(";;") + 2);
 		String s1 = match.substring(match.indexOf(".") + 1);
 		String oldFieldName = s1.substring(0, s1.indexOf(";;"));
@@ -485,6 +477,41 @@ public class Cartographer {
 		return null;
 	}
 
+	private ClassMapping getClassMapping(ClassEntry classEntry, boolean stopAtParent) {
+		List<ClassEntry> chain = classEntry.getClassChain();
+		ClassMapping parentMapping = null;
+		for (ClassEntry parent : chain) {
+			if (parentMapping == null) {
+				parentMapping = deobfuscator.getMappings().getClassByObf(parent);
+			} else {
+				if (stopAtParent && chain.get(chain.size() - 1).equals(parent)) {
+					break;
+				}
+				ClassMapping mapping = parentMapping.getInnerClassByObfSimple(parent.getInnermostClassName());
+				if (mapping == null) {
+					try {
+						mapping = new ClassMapping(parent.getInnermostClassName());
+						parentMapping.addInnerClassMapping(mapping);
+					} catch (MappingConflict mappingConflict) {
+						throw new RuntimeException("A fatal error occurred", mappingConflict);
+					}
+				}
+				parentMapping = mapping;
+			}
+		}
+		return parentMapping;
+	}
+
+	//Gets an inner class mapping from the old mapping files
+	private ClassMapping getOldClassMapping(String name){
+		String[] nameSplit = name.split("\\$");
+		ClassMapping classMapping = null;
+		for(String sname : nameSplit){
+			classMapping = classMapping == null ? oldMappings.getClassByObf(sname) : classMapping.getInnerClassByObfSimple(sname);
+		}
+		return classMapping;
+	}
+
 	private ClassNode getClassNode(ClassEntry classEntry) {
 		return deobfuscator.getJar().getClassNode(classEntry.getName());
 	}
@@ -493,8 +520,8 @@ public class Cartographer {
 		return deobfuscator.getJar().getClassNode(className);
 	}
 
-	private void log(String log){
-		if(logFile == null){
+	private void log(String log) {
+		if (logFile == null) {
 			return;
 		}
 		logger.add(log);
