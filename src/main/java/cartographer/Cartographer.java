@@ -34,10 +34,15 @@ public class Cartographer {
 	private Mappings oldMappings;
 	private Matches matches;
 
+	private ConstructorMapping newConstructorMappings;
+	private ConstructorMapping oldConstructorMappings;
+
 	File oldMappingsFile;
 	File outputMappingsFile;
 	File historyFile;
 	File matchesFile;
+	File newConstructorFile;
+	File oldConstructorFile;
 
 	String packageName = "net/minecraft";
 
@@ -59,8 +64,13 @@ public class Cartographer {
 		Validate.notNull(outputMappingsFile);
 		Validate.notNull(historyFile);
 		Validate.isTrue(!packageName.isEmpty());
+		Validate.notNull(newConstructorFile);
 
 		deobfuscator = new Deobfuscator(new JarFile(newJar));
+		newConstructorMappings = new ConstructorMapping();
+		if(oldConstructorFile != null){
+			oldConstructorMappings = new ConstructorMapping(oldConstructorFile);
+		}
 
 		if (historyFile.exists()) {
 			System.out.println("Reading history file");
@@ -154,6 +164,8 @@ public class Cartographer {
 			System.out.println("Exporting new mappings");
 			MappingsEnigmaWriter mappingWriter = new MappingsEnigmaWriter();
 			mappingWriter.write(outputMappingsFile, deobfuscator.getMappings(), false);
+
+			newConstructorMappings.save(newConstructorFile);
 		}
 
 		//TODO move this out into its own class
@@ -348,24 +360,29 @@ public class Cartographer {
 
 		String oldMethodName = s1.substring(0, s1.indexOf("("));
 		MethodMapping oldMapping = oldClass.getMethodByObf(oldMethodName, new MethodDescriptor(oldMethodDesc));
-		if(methodEntry.isConstructor()){
-			throw new RuntimeException("This needs to be added");
-		}
-
-		String signature = methodEntry.getDesc().toString();
-
-		log("MM: " + methodEntry.getName() + signature + " -> " + (oldMapping == null ? "null" : oldMapping.getDeobfName()));
-		if (oldMapping == null || oldMapping.getDeobfName() == null) {
+		if (oldMapping == null) {
 			System.out.println("A matched method " + methodEntry.toString() + " did not a previous mapping, creating a new entry");
 			return handleNewMethod(methodEntry);
 		}
+		String oldDebofName = oldMapping.getDeobfName();
+
+		if(methodEntry.isConstructor()){
+			ConstructorMapping.Mapping constructorMapping = oldConstructorMappings.getMapping(oldClassName, oldMapping);
+			if(constructorMapping == null){
+				throw new RuntimeException("Failed to get old mapping for " + oldMapping.getObfName() + " in " + oldClassName);
+			}
+			oldDebofName = constructorMapping.deobfName;
+		}
+
+		String signature = methodEntry.getDesc().toString();
+		log("MM: " + methodEntry.getName() + signature + " -> " + (oldMapping == null ? "null" : oldDebofName));
 		MethodMapping mapping = new MethodMapping(methodEntry.getName(), methodEntry.getDesc());
 		if(!methodEntry.isConstructor()){
-			mapping.setDeobfName(oldMapping.getDeobfName());
+			mapping.setDeobfName(oldDebofName);
 		}
 		ClassMapping classMapping = getClassMapping(methodEntry.getOwnerClassEntry(), false);
 		classMapping.addMethodMapping(mapping);
-		return Triple.of(oldMapping, oldMapping.getDeobfName(), mapping);
+		return Triple.of(oldMapping, oldDebofName, mapping);
 	}
 
 	private String getMethodMatch(MethodDefEntry methodEntry) {
@@ -410,6 +427,13 @@ public class Cartographer {
 				}
 				log("\tNP: " + newMapping.toString() + "_" + arg + " -> " + newName);
 			}
+		}
+
+		//Saves the constuctor names along with the vars as the name doesnt get saved in the main mappings
+		if(methodEntry.isConstructor()){
+			ConstructorMapping.Mapping constructorMapping = newConstructorMappings.addMapping(methodEntry);
+			constructorMapping.deobfName = methodMappingInfo.getMiddle();
+			constructorMapping.applyVariableMappings(newMapping);
 		}
 	}
 
@@ -591,6 +615,16 @@ public class Cartographer {
 
 	public Cartographer setLogFile(File logFile) {
 		this.logFile = logFile;
+		return this;
+	}
+
+	public Cartographer setNewConstructorFile(File newConstructorFile) {
+		this.newConstructorFile = newConstructorFile;
+		return this;
+	}
+
+	public Cartographer setOldConstructorFile(File oldConstructorFile) {
+		this.oldConstructorFile = oldConstructorFile;
 		return this;
 	}
 }
