@@ -12,6 +12,7 @@ import cuchaz.enigma.throwables.MappingParseException;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang3.Validate;
 import org.apache.commons.lang3.tuple.Triple;
+import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.ClassNode;
 
 import java.io.File;
@@ -26,6 +27,7 @@ public class Cartographer {
 	File oldJar;
 	File newJar;
 	File outputJar;
+	File sourcesDir;
 
 	File logFile;
 	//10/10 logger right here, TODO use a propper logger
@@ -112,7 +114,14 @@ public class Cartographer {
 
 		Comparator<Object> entryComparator = Comparator
 			.comparingInt(o -> Util.getObfIndex((((Entry) o).getOwnerClassEntry().getName())))
-			.thenComparingInt(o -> Util.getObfIndex((((Entry) o).getName())));
+			.thenComparingInt(o -> Util.getObfIndex((((Entry) o).getName())))
+			.thenComparing((o1, o2) -> {
+				if(o1 instanceof ClassEntry && o2 instanceof ClassEntry){
+					//Forces inner classes to go last
+					return Boolean.compare(((ClassEntry) o2).isInnerClass(), ((ClassEntry) o1).isInnerClass());
+				}
+				return 0;
+			});
 
 		methodEntries.sort(entryComparator);
 		fieldEntries.sort(entryComparator);
@@ -140,19 +149,17 @@ public class Cartographer {
 		System.out.println("Matched Fields: " + matchedFields + " New Fields: " + newFields);
 
 		System.out.println("Rebuilding method names");
-
-		final AtomicInteger total = new AtomicInteger();
-
 		deobfuscator.rebuildMethodNames(new Deobfuscator.ProgressListener() {
+			final AtomicInteger count = new AtomicInteger();
 			@Override
 			public void init(int totalWork, String title) {
-				total.set(totalWork);
+				count.set(totalWork);
 			}
 
 			@Override
 			public void onProgress(int numDone, String message) {
-				int percentage = (numDone * 100) / total.get();
-				System.out.print("\r" + numDone + "/" + total.get() + "\t\t" + percentage + "%\t\t" + message);
+				int percentage = (numDone * 100) / count.get();
+				System.out.print("\r" + numDone + "/" + count.get() + "\t\t" + percentage + "%\t\t" + message);
 			}
 		});
 		System.out.println();
@@ -168,23 +175,47 @@ public class Cartographer {
 			newConstructorMappings.save(newConstructorFile);
 		}
 
-		//TODO move this out into its own class
+
 		if (outputJar != null) {
 			System.out.println("Exporting jar");
 			if (outputJar.exists()) {
 				outputJar.delete();
 			}
 			deobfuscator.writeJar(outputJar, new Deobfuscator.ProgressListener() {
+				AtomicInteger count = new AtomicInteger();
 				@Override
 				public void init(int totalWork, String title) {
-
+					count.set(totalWork);
 				}
 
 				@Override
 				public void onProgress(int numDone, String message) {
-
+					int percentage = (numDone * 100) / count.get();
+					System.out.print("\r" + numDone + "/" + count.get() + "\t\t" + percentage + "%\t\t" + message);
 				}
 			});
+			System.out.println();
+		}
+		if(sourcesDir != null){
+			if(sourcesDir.exists()){
+				FileUtils.deleteDirectory(sourcesDir);
+			}
+			sourcesDir.mkdir();
+			System.out.println("Writing sources");
+			deobfuscator.writeSources(sourcesDir, new Deobfuscator.ProgressListener() {
+				AtomicInteger count = new AtomicInteger();
+				@Override
+				public void init(int totalWork, String title) {
+					count.set(totalWork);
+				}
+
+				@Override
+				public void onProgress(int numDone, String message) {
+					int percentage = (numDone * 100) / count.get();
+					System.out.print("\r" + numDone + "/" + count.get() + "\t\t" + percentage + "%\t\t" + message);
+				}
+			});
+			System.out.println();
 		}
 		if (logFile != null) {
 			try {
@@ -196,7 +227,7 @@ public class Cartographer {
 	}
 
 	private void handleClass(ClassEntry classEntry) {
-		if (!classEntry.getClassName().contains("/")) { //Skip everything already in a package
+		if (!classEntry.getClassName().contains("/") && !(classEntry.isInnerClass() && classEntry.getInnermostClassName().matches("[0-9]+"))) { //Skip everything already in a package and weird inner classes
 			String match = getClassMatch(classEntry);
 			if (match == null) {
 				handleNewClass(classEntry);
@@ -209,7 +240,18 @@ public class Cartographer {
 		} else {
 			//Add the class to the mappings without a new name
 			try {
-				deobfuscator.getMappings().addClassMapping(new ClassMapping(classEntry.getClassName()));
+				if(!classEntry.isInnerClass()){
+					deobfuscator.getMappings().addClassMapping(new ClassMapping(classEntry.getName()));
+				} else {
+					ClassMapping parent = getClassMapping(classEntry, true);
+					if(parent == null){
+						//Not a lot I can do if the parent doesnt have a mapping, seems to only happen for a few realms classes so shouldnt cause too much issue
+						//System.out.println("Failed to get " + classEntry.getOwnerClassEntry());
+						return;
+					}
+					parent.addInnerClassMapping(new ClassMapping(classEntry.getName()));
+				}
+
 			} catch (MappingConflict mappingConflict) {
 				throw new RuntimeException("Mappings failed to apply", mappingConflict);
 			}
@@ -270,6 +312,11 @@ public class Cartographer {
 			return;
 		}
 		if (methodEntry.getName().toLowerCase().contains("lambda$")) { //Nope
+			return;
+		}
+
+		//Skip all synthetic or bridged methods as renaming them can break them in weird and not so wonderful ways
+		if(methodEntry.getAccess().isSynthetic() || ((methodEntry.getAccess().getFlags() & Opcodes.ACC_BRIDGE) != 0)){
 			return;
 		}
 
@@ -625,6 +672,11 @@ public class Cartographer {
 
 	public Cartographer setOldConstructorFile(File oldConstructorFile) {
 		this.oldConstructorFile = oldConstructorFile;
+		return this;
+	}
+
+	public Cartographer setSourcesDir(File sourcesDir) {
+		this.sourcesDir = sourcesDir;
 		return this;
 	}
 }

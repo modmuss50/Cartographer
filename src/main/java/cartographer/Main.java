@@ -29,12 +29,12 @@ public class Main {
 		//			.start();
 
 		generate("1.13-pre5");
-				update("1.13-pre5", "1.13-pre6");
-				update("1.13-pre6", "1.13-pre7");
-				update("1.13-pre7", "1.13-pre8");
-				update("1.13-pre8", "1.13-pre9");
-				update("1.13-pre9", "1.13-pre10");
-				update("1.13-pre10", "1.13");
+		update("1.13-pre5", "1.13-pre6");
+		update("1.13-pre6", "1.13-pre7");
+		update("1.13-pre7", "1.13-pre8");
+		update("1.13-pre8", "1.13-pre9");
+		update("1.13-pre9", "1.13-pre10");
+		update("1.13-pre10", "1.13");
 
 	}
 
@@ -47,6 +47,8 @@ public class Main {
 			.setHistoryFile(new File("mappings/history.txt"))
 			.setLibraryProvider(new MinecraftLibProvider(version))
 			.setLogFile(new File("logs/generation_" + version + ".txt"))
+			//.setOutputJar(new File("finaljars/mapped." + version + ".jar"))
+			//.setSourcesDir(new File("sources/" + version))
 			.resetHistory()
 			.start();
 	}
@@ -64,6 +66,8 @@ public class Main {
 			.setMatchesFile(new File("matches/" + source + "-" + target + ".match"))
 			.setHistoryFile(new File("mappings/history.txt"))
 			.setLogFile(new File("logs/update_" + source + "_" + target + ".txt"))
+			//.setOutputJar(new File("finaljars/mapped." + target + ".jar"))
+			//.setSourcesDir(new File("sources/" + target))
 			.start();
 	}
 
