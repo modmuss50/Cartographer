@@ -6,7 +6,11 @@ import org.apache.commons.lang3.Validate;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodNode;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.InputStream;
 import java.lang.reflect.Method;
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -210,6 +214,32 @@ public class Util {
 			return c - 'a' + 1;
 		}
 		return 0;
+	}
+
+	public static boolean checkHash(File file, String hash){
+		if(!file.exists()){
+			return false;
+		}
+		try {
+			return getSha1(file).equalsIgnoreCase(hash);
+		} catch (Exception e) {
+			return false;
+		}
+	}
+
+	//Thanks https://stackoverflow.com/questions/6293713/java-how-to-create-sha-1-for-a-file
+	public static String getSha1(File file) throws Exception  {
+		MessageDigest digest = MessageDigest.getInstance("SHA-1");
+		InputStream fis = new FileInputStream(file);
+		int n = 0;
+		byte[] buffer = new byte[8192];
+		while (n != -1) {
+			n = fis.read(buffer);
+			if (n > 0) {
+				digest.update(buffer, 0, n);
+			}
+		}
+		return digest.toString();
 	}
 
 }

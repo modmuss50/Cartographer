@@ -11,10 +11,6 @@ repositories {
 		name = 'modmuss50'
 		url = 'http://maven.modmuss50.me/'
 	}
-	maven {
-		name = 'fabric'
-		url = 'http://maven.fabricmc.net/'
-	}
 }
 
 //ASM 6 is required to read some of mc's new libs
@@ -32,5 +28,6 @@ dependencies {
 
 
 	compile 'org.ow2.asm:asm-debug-all:6.0_BETA'
+	compile "net.fabricmc:weave:+"
 
 }
