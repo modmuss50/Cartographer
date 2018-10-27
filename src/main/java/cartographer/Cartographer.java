@@ -202,19 +202,10 @@ public class Cartographer {
 			if (outputJar.exists()) {
 				outputJar.delete();
 			}
-			deobfuscator.writeJar(outputJar, new Deobfuscator.ProgressListener() {
-				AtomicInteger count = new AtomicInteger();
-				@Override
-				public void init(int totalWork, String title) {
-					count.set(totalWork);
-				}
-
-				@Override
-				public void onProgress(int numDone, String message) {
-					int percentage = (numDone * 100) / count.get();
-					System.out.print("\r" + numDone + "/" + count.get() + "\t\t" + percentage + "%\t\t" + message);
-				}
-			});
+			if(!outputJar.getParentFile().exists()){
+				outputJar.getParentFile().mkdirs();
+			}
+			deobfuscator.writeJar(outputJar, null);
 			System.out.println();
 		}
 		if(sourcesDir != null){
@@ -341,6 +332,10 @@ public class Cartographer {
 			return;
 		}
 
+		if (methodEntry.getName().length() > 3 && !methodEntry.isConstructor()) {
+			return;
+		}
+
 		ClassNode ownerClass = getClassNode(methodEntry.getOwnerClassEntry());
 		Util.ClassData classData = new Util.ClassData(ownerClass, deobfuscator.getJar(), libraryProvider);
 		Util.MethodData lookupMethod = classData.getMethodData(methodEntry);
@@ -376,9 +371,6 @@ public class Cartographer {
 			return;
 		}
 
-		if (methodEntry.getName().length() > 3 && !methodEntry.isConstructor()) {
-			return;
-		}
 
 		//We dont want sub method args to be remapped
 		if (!deobfuscator.isMethodProvider(methodEntry.getOwnerClassEntry(), methodEntry)) {

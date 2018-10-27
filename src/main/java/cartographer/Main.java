@@ -1,13 +1,17 @@
 package cartographer;
 
+import com.google.common.base.Stopwatch;
+
 import java.io.File;
 import java.io.IOException;
 
 public class Main {
 
 	public static void main(String[] args) throws IOException {
+		Stopwatch timer = Stopwatch.createStarted();
 		generate("18w43b");
 		update("18w43b", "18w43c");
+		System.out.println("Completed in " + timer.stop());
 	}
 
 	private static void generate(String version) throws IOException {
@@ -22,7 +26,7 @@ public class Main {
 			.setHistoryFile(new File("mappings/history.txt"))
 			.setLibraryProvider(minecraftLibProvider)
 			.setLogFile(new File("logs/generation_" + version + ".txt"))
-			//.setOutputJar(new File("finaljars/mapped." + version + ".jar"))
+			.setOutputJar(new File("finaljars/mapped." + version + ".jar"))
 			//.setSourcesDir(new File("sources/" + version))
 			.resetHistory()
 			.start();
@@ -44,7 +48,7 @@ public class Main {
 			.setMatchesFile(new File("matches/" + source + "-" + target + ".match"))
 			.setHistoryFile(new File("mappings/history.txt"))
 			.setLogFile(new File("logs/update_" + source + "_" + target + ".txt"))
-			//.setOutputJar(new File("finaljars/mapped." + target + ".jar"))
+			.setOutputJar(new File("finaljars/mapped." + target + ".jar"))
 			//.setSourcesDir(new File("sources/" + target))
 			.start();
 	}

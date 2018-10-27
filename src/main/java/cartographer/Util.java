@@ -161,13 +161,21 @@ public class Util {
 		}
 
 		public boolean isPrivate(){
-			return Modifier.isPrivate(modifiers);
+			return !Modifier.isPublic(modifiers);
 		}
 
 		public boolean isStatic(){
 			return Modifier.isStatic(modifiers);
 		}
 
+		@Override
+		public String toString() {
+			return "MethodData{" +
+					"name='" + name + '\'' +
+					", desc='" + desc + '\'' +
+					", modifiers=" + modifiers +
+					'}';
+		}
 	}
 
 	static String getDescriptorForClass(final Class c) {
