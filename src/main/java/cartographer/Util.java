@@ -10,6 +10,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -145,15 +146,26 @@ public class Util {
 
 		String name;
 		String desc;
+		int modifiers;
 
 		public MethodData(MethodNode methodNode) {
 			this.name = methodNode.name;
 			this.desc = methodNode.desc;
+			this.modifiers = methodNode.access;
 		}
 
 		public MethodData(Method method) {
 			this.name = method.getName();
 			this.desc = getMethodDescriptor(method);
+			this.modifiers = method.getModifiers();
+		}
+
+		public boolean isPrivate(){
+			return Modifier.isPrivate(modifiers);
+		}
+
+		public boolean isStatic(){
+			return Modifier.isStatic(modifiers);
 		}
 
 	}

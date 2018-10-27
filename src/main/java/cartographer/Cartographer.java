@@ -332,8 +332,12 @@ public class Cartographer {
 		for (Util.ClassData ancestor : ancestors) {
 			Util.MethodData ancestorCheck = ancestor.getMethodData(methodEntry);
 			if (ancestorCheck != null) {
-				foundAncestor = true;
-				break;
+				boolean isPrivateOrStatic = ancestorCheck.isPrivate() || ancestorCheck.isStatic();
+				//Private or static methods are not an ancestor, they can have the same name + desc but do different things
+				if(!isPrivateOrStatic){
+					foundAncestor = true;
+					break;
+				}
 			}
 			//Fuck enums
 			if (ancestor.name.equals(Enum.class.getName())) {
