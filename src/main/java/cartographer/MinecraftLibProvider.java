@@ -62,7 +62,7 @@ public class MinecraftLibProvider extends LibraryProvider {
 		JsonObject serverObject = downloadsArray.getAsJsonObject("server");
 
 		File clientJar = new File("mcjars/" + mcVersion + ".client.jar");
-		File serverJar = new File("mcjars/" + mcVersion + ".client.jar");
+		File serverJar = new File("mcjars/" + mcVersion + ".server.jar");
 		File mergedJar = new File("mcjars/" + mcVersion + ".merged.jar");
 
 		if(!Util.checkHash(clientJar, clientObject.get("sha1").getAsString())){

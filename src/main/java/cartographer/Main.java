@@ -7,7 +7,7 @@ public class Main {
 
 	public static void main(String[] args) throws IOException {
 		generate("18w43b");
-		//update("source", "target");
+		update("18w43b", "18w43c");
 	}
 
 	private static void generate(String version) throws IOException {
@@ -17,6 +17,7 @@ public class Main {
 		new Cartographer()
 			.setNewJar(minecraftLibProvider.minecraftJar())
 			.setOutputMappingsFile(new File("mappings/" + version + ".mappings"))
+			.setOutputMappingsTinyFile(new File("mappings/" + version + ".tiny"))
 			.setNewConstructorFile(new File("mappings/" + version + ".constructors"))
 			.setHistoryFile(new File("mappings/history.txt"))
 			.setLibraryProvider(minecraftLibProvider)
@@ -37,6 +38,7 @@ public class Main {
 			.setLibraryProvider(targetProvider)
 			.setOldMappingsFile(new File("mappings/" + source + ".mappings"))
 			.setOutputMappingsFile(new File("mappings/" + target + ".mappings"))
+			.setOutputMappingsTinyFile(new File("mappings/" + target + ".tiny"))
 			.setNewConstructorFile(new File("mappings/" + target + ".constructors"))
 			.setOldConstructorFile(new File("mappings/" + source + ".constructors"))
 			.setMatchesFile(new File("matches/" + source + "-" + target + ".match"))

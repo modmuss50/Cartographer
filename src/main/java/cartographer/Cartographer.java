@@ -9,6 +9,7 @@ import cuchaz.enigma.mapping.entry.MethodDefEntry;
 import cuchaz.enigma.throwables.IllegalNameException;
 import cuchaz.enigma.throwables.MappingConflict;
 import cuchaz.enigma.throwables.MappingParseException;
+import net.fabricmc.weave.CommandTinyify;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang3.Validate;
 import org.apache.commons.lang3.tuple.Triple;
@@ -41,6 +42,7 @@ public class Cartographer {
 
 	File oldMappingsFile;
 	File outputMappingsFile;
+	File outputMappingsTinyFile;
 	File historyFile;
 	File matchesFile;
 	File newConstructorFile;
@@ -173,7 +175,26 @@ public class Cartographer {
 			mappingWriter.write(outputMappingsFile, deobfuscator.getMappings(), false);
 
 			newConstructorMappings.save(newConstructorFile);
-		}
+
+			if(outputMappingsTinyFile != null){
+			    if(outputMappingsTinyFile.exists()){
+			        outputMappingsTinyFile.delete();
+                }
+                System.out.println("Converting mappings to tiny");
+                String[] args = new String[]{
+                        newJar.getAbsolutePath(),
+                        outputMappingsFile.getAbsolutePath(),
+						outputMappingsTinyFile.getAbsolutePath(),
+                        "mojang",
+                        "intermediary"};
+
+                try {
+                    new CommandTinyify().run(args);
+                } catch (Exception e) {
+                    throw new RuntimeException("Failed to convert mappings to tiny", e);
+                }
+            }
+        }
 
 
 		if (outputJar != null) {
@@ -279,7 +300,7 @@ public class Cartographer {
 		boolean innerClass = entry.isInnerClass();
 		ClassMapping oldClassMapping = getOldClassMapping(oldName);
 		if(oldClassMapping == null){
-			throw new RuntimeException("Failed to find old mapping for " + oldName);
+			throw new RuntimeException("Failed to find old mapping for class: " + oldName);
 		}
 
 		try {
@@ -361,7 +382,7 @@ public class Cartographer {
 
 		//We dont want sub method args to be remapped
 		if (!deobfuscator.isMethodProvider(methodEntry.getOwnerClassEntry(), methodEntry)) {
-			System.out.println("Found in MC jar " + methodEntry.getName() + "-" + methodEntry.getOwnerClassEntry().getClassName());
+			//System.out.println("Found in MC jar " + methodEntry.getName() + "-" + methodEntry.getOwnerClassEntry().getClassName());
 			return;
 		}
 
@@ -634,7 +655,12 @@ public class Cartographer {
 		return this;
 	}
 
-	public Cartographer setHistoryFile(File historyFile) {
+    public Cartographer setOutputMappingsTinyFile(File outputMappingsTinyFile) {
+        this.outputMappingsTinyFile = outputMappingsTinyFile;
+        return this;
+    }
+
+    public Cartographer setHistoryFile(File historyFile) {
 		this.historyFile = historyFile;
 		return this;
 	}
