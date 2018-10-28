@@ -65,12 +65,12 @@ public class MinecraftLibProvider extends LibraryProvider {
 		File serverJar = new File("mcjars/" + mcVersion + ".server.jar");
 		File mergedJar = new File("mcjars/" + mcVersion + ".merged.jar");
 
-		if(!Util.checkHash(clientJar, clientObject.get("sha1").getAsString())){
+		if(!clientJar.exists()){
 			System.out.println("Downloading: " + clientObject.get("url").getAsString());
 			FileUtils.copyURLToFile(new URL(clientObject.get("url").getAsString()), clientJar);
 		}
 		
-		if(!Util.checkHash(serverJar, serverObject.get("sha1").getAsString())){
+		if(!serverJar.exists()){
 			System.out.println("Downloading: " + serverObject.get("url").getAsString());
 			FileUtils.copyURLToFile(new URL(serverObject.get("url").getAsString()), serverJar);
 		}
