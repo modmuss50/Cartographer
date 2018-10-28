@@ -6,6 +6,8 @@ import net.fabricmc.tinyremapper.TinyUtils;
 import net.fabricmc.weave.CommandFindMappingErrors;
 
 import java.io.File;
+import java.util.ArrayList;
+import java.util.List;
 
 public class MappingTests {
 
@@ -18,7 +20,9 @@ public class MappingTests {
     }
 
     public void test() throws Exception {
+        System.out.println("Running tests on " + version);
         File minecraftJar = minecraftProvider.minecraftJar();
+        minecraftProvider.load();
         File tinyMappings = new File("mappings/" + version + ".tiny");
 
         File testDir = new File("test");
@@ -46,6 +50,13 @@ public class MappingTests {
             OutputConsumerPath outputConsumer = new OutputConsumerPath(output.toPath());
             outputConsumer.addNonClassFiles(input.toPath());
             remapper.read(input.toPath());
+
+            List<File> libs = new ArrayList<>();
+            minecraftProvider.getLibs(libs);
+            for(File file : libs){
+                remapper.read(file.toPath());
+            }
+
             remapper.apply(input.toPath(), outputConsumer);
             outputConsumer.finish();
             remapper.finish();

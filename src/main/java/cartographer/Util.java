@@ -1,8 +1,11 @@
 package cartographer;
 
+import com.google.common.base.Function;
+import com.google.common.base.Objects;
 import cuchaz.enigma.analysis.ParsedJar;
 import cuchaz.enigma.mapping.entry.MethodDefEntry;
 import org.apache.commons.lang3.Validate;
+import org.checkerframework.checker.nullness.compatqual.NullableDecl;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodNode;
 
@@ -12,9 +15,7 @@ import java.io.InputStream;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.security.MessageDigest;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
+import java.util.*;
 import java.util.stream.Collectors;
 
 public class Util {
@@ -130,7 +131,18 @@ public class Util {
 			return null;
 		}
 
-		public void getAncestors(List<ClassData> list) {
+		public Set<MethodData> allMethods(){
+			Set<ClassData> ancestors = new HashSet<>();
+			getAncestors(ancestors);
+			ancestors.add(this);
+			Set<MethodData> allMethods = new HashSet<>();
+			for(ClassData classData : ancestors){
+				allMethods.addAll(classData.methods);
+			}
+			return allMethods;
+		}
+
+		public void getAncestors(Set<ClassData> list) {
 			if (interfaces != null) {
 				list.addAll(interfaces);
 				interfaces.forEach(classData -> classData.getAncestors(list));
@@ -139,6 +151,22 @@ public class Util {
 				list.add(superClass);
 				superClass.getAncestors(list);
 			}
+		}
+
+		@Override
+		public boolean equals(Object o) {
+			if (this == o) return true;
+			if (o == null || getClass() != o.getClass()) return false;
+			ClassData classData = (ClassData) o;
+			return Objects.equal(name, classData.name) &&
+					Objects.equal(superClass, classData.superClass) &&
+					Objects.equal(interfaces, classData.interfaces) &&
+					Objects.equal(methods, classData.methods);
+		}
+
+		@Override
+		public int hashCode() {
+			return Objects.hashCode(name, superClass, interfaces, methods);
 		}
 	}
 
@@ -175,6 +203,21 @@ public class Util {
 					", desc='" + desc + '\'' +
 					", modifiers=" + modifiers +
 					'}';
+		}
+
+		@Override
+		public boolean equals(Object o) {
+			if (this == o) return true;
+			if (o == null || getClass() != o.getClass()) return false;
+			MethodData that = (MethodData) o;
+			return modifiers == that.modifiers &&
+					Objects.equal(name, that.name) &&
+					Objects.equal(desc, that.desc);
+		}
+
+		@Override
+		public int hashCode() {
+			return Objects.hashCode(name, desc, modifiers);
 		}
 	}
 

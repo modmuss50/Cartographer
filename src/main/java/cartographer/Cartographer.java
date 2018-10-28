@@ -19,10 +19,15 @@ import org.objectweb.asm.tree.MethodNode;
 
 import java.io.File;
 import java.io.IOException;
+import java.lang.reflect.Modifier;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.jar.JarFile;
+import java.util.stream.Collectors;
 
 public class Cartographer {
 
@@ -64,7 +69,7 @@ public class Cartographer {
 	public int newFields = 0;
 	public int matchedFields = 0;
 
-	List<String[]> similarInterfaces = new ArrayList<>();
+	Map<Set<String>, Set<String>> similarInterfaces = new HashMap<>();
 	HashMap<String, String> similarInterfaceNames = new HashMap<>();
 
 
@@ -352,7 +357,7 @@ public class Cartographer {
 		Util.MethodData lookupMethod = classData.getMethodData(methodEntry);
 		Validate.notNull(lookupMethod);
 
-		List<Util.ClassData> ancestors = new ArrayList<>();
+		Set<Util.ClassData> ancestors = new HashSet<>();
 		classData.getAncestors(ancestors);
 
 		boolean foundAncestor = false;
@@ -425,15 +430,20 @@ public class Cartographer {
 	}
 
 	private String handleSimilarInterface(String name, MethodDefEntry entry){
-		for(String[] similarInterface : similarInterfaces){
-			String mainIfaceName = similarInterface[0] + "_" + entry.getName();
-			for (int i = 0; i < similarInterface.length; i++) {
-				String iface = similarInterface[i];
-				if(iface.equals(entry.getOwnerClassEntry().getClassName())){
+		for(Map.Entry<Set<String>, Set<String>> setEntry : similarInterfaces.entrySet()){
+			Set<String> interfaces = setEntry.getKey();
+			Set<String> methods = setEntry.getValue();
+
+			String mainIfaceName = interfaces.toString() + entry.getName() + entry.getDesc();
+
+			if(interfaces.contains(entry.getOwnerClassEntry().getClassName())){
+				if(methods.contains(entry.getName() + entry.getDesc())){
 					if(similarInterfaceNames.containsKey(mainIfaceName)){
 						name = similarInterfaceNames.get(mainIfaceName);
+						System.out.println("Found similar name for " + mainIfaceName + " (" + name);
 					} else {
 						similarInterfaceNames.put(mainIfaceName, name);
+						System.out.println("Setting new name for " + mainIfaceName + " (" + name);
 					}
 				}
 			}
@@ -645,28 +655,64 @@ public class Cartographer {
 
 	private void checkSharedInterfaceNames(ClassEntry classEntry){
 		ClassNode ownerClass = getClassNode(classEntry);
+		if(Modifier.isInterface(ownerClass.access)){
+			return;
+		}
 		for(MethodNode methodNode : ownerClass.methods){
-			List<String> methodNodes = findInInterfaces(methodNode, ownerClass);
-			if(methodNodes.size() > 1){
-				similarInterfaces.add(methodNodes.toArray(new String[0]));
+			Set<String> interfaceNames = new HashSet<>();
+			findInInterfaces(methodNode, ownerClass, interfaceNames);
+			if(interfaceNames.size() > 1 && !similarInterfaces.containsKey(interfaceNames)){
+				System.out.println("Found similar interface:");
+				System.out.println(interfaceNames);
+				System.out.println(findCommonMethods(interfaceNames));
+				System.out.println("####");
+				similarInterfaces.put(interfaceNames, findCommonMethods(interfaceNames));
 			}
 		}
 	}
 
-	private List<String> findInInterfaces(MethodNode node, ClassNode baseClass){
-		List<String> ifaces = new ArrayList<>();
-		for(String iface : baseClass.interfaces){
-			ClassNode iterface = getClassNode(iface);
-			if(iterface == null){
-				return ifaces;
-			}
-			for(MethodNode ifaceNode : iterface.methods){
+	private void findInInterfaces(MethodNode node, ClassNode baseClass, Set<String> ifaces){
+		if(baseClass == null){
+			return;
+		}
+		if(Modifier.isInterface(baseClass.access)){
+			for(MethodNode ifaceNode : baseClass.methods){
 				if(ifaceNode.name.equals(node.name) && ifaceNode.desc.equals(node.desc)){
-					ifaces.add(iface);
+					ifaces.add(baseClass.name);
 				}
 			}
 		}
-		return ifaces;
+		for(String iface : baseClass.interfaces){
+			findInInterfaces(node, getClassNode(iface), ifaces);
+		}
+		findInInterfaces(node, getClassNode(baseClass.superName), ifaces);
+	}
+
+	private Set<String> findCommonMethods(Set<String> interfaceNames){
+		Set<String> methods = new HashSet<>();
+		for(String interfaceName : interfaceNames){
+			ClassNode classNode = getClassNode(interfaceName);
+			methods.addAll(classNode.methods.stream()
+					.map(methodNode -> methodNode.name + methodNode.desc)
+					.collect(Collectors.toSet())
+			);
+		}
+		Set<String> commonMethods = new HashSet<>();
+		for(String method : methods){
+			boolean allContain = true;
+			for(String interfaceName : interfaceNames) {
+				ClassNode classNode = getClassNode(interfaceName);
+				allContain = classNode.methods.stream()
+						.map(methodNode -> methodNode.name + methodNode.desc).anyMatch(method::equals);
+				if(!allContain){
+					break;
+				}
+			}
+			if(allContain){
+				commonMethods.add(method);
+			}
+		}
+		return commonMethods;
 	}
 
 
