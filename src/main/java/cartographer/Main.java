@@ -9,9 +9,9 @@ public class Main {
 
 	public static void main(String[] args) throws Exception {
 		Stopwatch timer = Stopwatch.createStarted();
-	//	generate("18w43b");
+		generate("18w43b");
 		//test("18w43b");
-	//	update("18w43b", "18w43c");
+		update("18w43b", "18w43c");
 //
 		test("18w43c");
 		System.out.println("Completed in " + timer.stop());
