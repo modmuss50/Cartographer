@@ -15,6 +15,7 @@ import org.apache.commons.lang3.Validate;
 import org.apache.commons.lang3.tuple.Triple;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.MethodNode;
 
 import java.io.File;
 import java.io.IOException;
@@ -62,6 +63,10 @@ public class Cartographer {
 	public int matchedMethods = 0;
 	public int newFields = 0;
 	public int matchedFields = 0;
+
+	List<String[]> similarInterfaces = new ArrayList<>();
+	HashMap<String, String> similarInterfaceNames = new HashMap<>();
+
 
 	public void start() throws IOException {
 		Validate.notNull(newJar);
@@ -127,6 +132,12 @@ public class Cartographer {
 
 		methodEntries.sort(entryComparator);
 		fieldEntries.sort(entryComparator);
+
+		//Check for similar interfaces
+		similarInterfaces.clear();
+		similarInterfaceNames.clear();
+		classEntries.forEach(this::checkSharedInterfaceNames);
+		System.out.println("Found " + similarInterfaces.size() + " similar interfaces");
 
 		System.out.println("Processing classes");
 		for (ClassEntry classEntry : classEntries) {
@@ -371,7 +382,6 @@ public class Cartographer {
 			return;
 		}
 
-
 		//We dont want sub method args to be remapped
 		if (!deobfuscator.isMethodProvider(methodEntry.getOwnerClassEntry(), methodEntry)) {
 			//System.out.println("Found in MC jar " + methodEntry.getName() + "-" + methodEntry.getOwnerClassEntry().getClassName());
@@ -399,6 +409,7 @@ public class Cartographer {
 	private Triple<MethodMapping, String, MethodMapping> handleNewMethod(MethodDefEntry methodEntry) {
 		String signature = methodEntry.getDesc().toString();
 		String newMethodName = mappingHistory.generateMethodName(signature);
+		newMethodName = handleSimilarInterface(newMethodName, methodEntry);
 		log("NM: " + methodEntry.getName() + signature + " -> " + newMethodName + signature);
 
 		MethodMapping mapping = new MethodMapping(methodEntry.getName(), methodEntry.getDesc());
@@ -411,6 +422,23 @@ public class Cartographer {
 		}
 		classMapping.addMethodMapping(mapping);
 		return Triple.of(null, newMethodName, mapping);
+	}
+
+	private String handleSimilarInterface(String name, MethodDefEntry entry){
+		for(String[] similarInterface : similarInterfaces){
+			String mainIfaceName = similarInterface[0] + "_" + entry.getName();
+			for (int i = 0; i < similarInterface.length; i++) {
+				String iface = similarInterface[i];
+				if(iface.equals(entry.getOwnerClassEntry().getClassName())){
+					if(similarInterfaceNames.containsKey(mainIfaceName)){
+						name = similarInterfaceNames.get(mainIfaceName);
+					} else {
+						similarInterfaceNames.put(mainIfaceName, name);
+					}
+				}
+			}
+		}
+		return name;
 	}
 
 	private Triple<MethodMapping, String, MethodMapping> handleMatchedMethod(MethodDefEntry methodEntry, String match) {
@@ -614,6 +642,33 @@ public class Cartographer {
 	private ClassNode getClassNode(String className) {
 		return deobfuscator.getJar().getClassNode(className);
 	}
+
+	private void checkSharedInterfaceNames(ClassEntry classEntry){
+		ClassNode ownerClass = getClassNode(classEntry);
+		for(MethodNode methodNode : ownerClass.methods){
+			List<String> methodNodes = findInInterfaces(methodNode, ownerClass);
+			if(methodNodes.size() > 1){
+				similarInterfaces.add(methodNodes.toArray(new String[0]));
+			}
+		}
+	}
+
+	private List<String> findInInterfaces(MethodNode node, ClassNode baseClass){
+		List<String> ifaces = new ArrayList<>();
+		for(String iface : baseClass.interfaces){
+			ClassNode iterface = getClassNode(iface);
+			if(iterface == null){
+				return ifaces;
+			}
+			for(MethodNode ifaceNode : iterface.methods){
+				if(ifaceNode.name.equals(node.name) && ifaceNode.desc.equals(node.desc)){
+					ifaces.add(iface);
+				}
+			}
+		}
+		return ifaces;
+	}
+
 
 	private void log(String log) {
 		if (logFile == null) {
